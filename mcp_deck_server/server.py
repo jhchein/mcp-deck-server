@@ -232,14 +232,11 @@ async def move_card(board_id: int, card_id: int, target_stack_name: str) -> Card
 @mcp.tool()
 async def archive_card(board_id: int, stack_id: int, card_id: int) -> Card:
     runtime = get_runtime()
-    # TODO: validate whether partial PUT blanks fields (see Phase 2 API investigation)
-    payload = {"archived": True}
     response = await make_nc_request(
         runtime.client,
         runtime.config,
         "PUT",
-        f"/boards/{board_id}/stacks/{stack_id}/cards/{card_id}",
-        json=payload,
+        f"/boards/{board_id}/stacks/{stack_id}/cards/{card_id}/archive",
     )
     return Card.model_validate(response)
 

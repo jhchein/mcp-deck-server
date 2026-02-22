@@ -1,0 +1,28 @@
+[
+  {
+    "id": 10,
+    "title": "Board title",
+    "color": "ff0000",
+    "archived": false,
+    "owner": {
+      "primaryKey": "admin",
+      "uid": "admin",
+      "displayName": "Administrator"
+    },
+    "permissions": {
+      "PERMISSION_READ": true,
+      "PERMISSION_EDIT": true,
+      "PERMISSION_MANAGE": true,
+      "PERMISSION_SHARE": true
+    },
+    "labels": [],
+    "users": [],
+    "shared": 0,
+    "deletedAt": 0,
+    "lastModified": 1586269585,
+    "settings": {
+      "notify-due": "off",
+      "calendar": true
+    }
+  }
+]

@@ -1,0 +1,20 @@
+{
+  "id": 10,
+  "title": "Board title",
+  "color": "ff0000",
+  "archived": false,
+  "owner": {
+    "primaryKey": "admin",
+    "uid": "admin",
+    "displayName": "Administrator"
+  },
+  "labels": [],
+  "users": [],
+  "shared": 0,
+  "deletedAt": 0,
+  "lastModified": 1586269585,
+  "settings": {
+    "notify-due": "off",
+    "calendar": true
+  }
+}

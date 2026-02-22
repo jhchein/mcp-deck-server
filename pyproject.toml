@@ -31,6 +31,7 @@ include = ["main.py", "mcp_deck_server"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["."]
 markers = [
     "integration: requires live Nextcloud instance",
     "slow: timing/performance tests",

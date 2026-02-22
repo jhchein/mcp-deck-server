@@ -1,0 +1,22 @@
+{
+  "id": 81,
+  "title": "Test",
+  "description": null,
+  "stackId": 4,
+  "type": "plain",
+  "lastModified": 1541528026,
+  "createdAt": 1541528026,
+  "labels": null,
+  "assignedUsers": null,
+  "attachments": null,
+  "attachmentCount": null,
+  "owner": "admin",
+  "order": 999,
+  "archived": false,
+  "done": null,
+  "duedate": "2019-12-24T19:29:30+00:00",
+  "deletedAt": 0,
+  "commentsUnread": 0,
+  "commentsCount": 0,
+  "overdue": 0
+}

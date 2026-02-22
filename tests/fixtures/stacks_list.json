@@ -1,0 +1,33 @@
+[
+  {
+    "id": 4,
+    "title": "ToDo",
+    "boardId": 10,
+    "order": 0,
+    "deletedAt": 0,
+    "lastModified": 1541426139,
+    "cards": [
+      {
+        "id": 81,
+        "title": "Task A",
+        "description": "",
+        "stackId": 4,
+        "type": "plain",
+        "owner": "admin",
+        "order": 1,
+        "archived": false,
+        "createdAt": 1541528026,
+        "lastModified": 1541528026
+      }
+    ]
+  },
+  {
+    "id": 5,
+    "title": "Done",
+    "boardId": 10,
+    "order": 1,
+    "deletedAt": 0,
+    "lastModified": 1541426140,
+    "cards": []
+  }
+]

@@ -75,6 +75,6 @@ class Board(BaseModel):
     activeSessions: Optional[List[Any]] = None
     deletedAt: Optional[int] = None
     lastModified: Optional[int] = None
-    settings: Optional[List[Any]] = None
+    settings: Optional[Union[List[Any], Dict[str, Any]]] = None
     ETag: Optional[str] = None
     owner: Optional[Owner] = None
