@@ -9,3 +9,29 @@ dependencies = [
     "mcp-server>=0.1.4",
     "python-dotenv>=1.1.1",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.0.0",
+    "respx>=0.21.1",
+    "ruff>=0.8.0",
+    "pyright>=1.1.390",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.pyright]
+pythonVersion = "3.13"
+include = ["main.py", "mcp_deck_server"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "integration: requires live Nextcloud instance",
+    "slow: timing/performance tests",
+]
