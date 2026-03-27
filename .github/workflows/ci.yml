@@ -1,0 +1,156 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Ruff check
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Pyright
+        run: uv run pyright
+
+  test:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Unit tests with coverage
+        run: >-
+          uv run pytest tests/unit/
+          --cov=mcp_deck_server
+          --cov-report=term-missing
+          --cov-report=xml:coverage.xml
+          --cov-fail-under=80
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+
+  integration:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    env:
+      NC_URL: ${{ secrets.NC_URL }}
+      NC_USER: ${{ secrets.NC_USER }}
+      NC_APP_PASSWORD: ${{ secrets.NC_APP_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run integration tests when configured
+        shell: bash
+        run: |
+          if [ ! -d tests/integration ]; then
+            echo "No integration test directory found; skipping."
+            exit 0
+          fi
+
+          if [ -z "${NC_URL}" ] || [ -z "${NC_USER}" ] || [ -z "${NC_APP_PASSWORD}" ]; then
+            echo "Integration secrets are not configured; skipping."
+            exit 0
+          fi
+
+          uv run pytest tests/integration/ -m integration
+
+  benchmarks:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run timing tests when present
+        shell: bash
+        run: |
+          if [ ! -f tests/test_timing.py ]; then
+            echo "No timing test file found; skipping."
+            exit 0
+          fi
+
+          uv run pytest tests/test_timing.py -s -m slow
+
+  audit:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Dependency audit
+        run: uv audit

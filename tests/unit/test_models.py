@@ -8,6 +8,9 @@ def test_board_model_from_fixture() -> None:
     board = Board.model_validate(load_fixture("board.json"))
     assert board.id == 10
     assert board.title == "Board title"
+    assert board.owner is not None
+    assert board.owner.displayname == "Administrator"
+    assert isinstance(board.settings, dict)
 
 
 def test_stack_model_with_embedded_cards() -> None:
@@ -22,3 +25,11 @@ def test_card_model_from_fixture() -> None:
     assert card.id == 81
     assert card.type == "plain"
     assert card.owner == "admin"
+
+
+def test_board_settings_list_is_accepted() -> None:
+    """GET /boards returns settings as [] when details=false (decision 014)."""
+    with_settings_list = load_fixture("board.json")
+    with_settings_list["settings"] = []
+    board = Board.model_validate(with_settings_list)
+    assert board.settings == []

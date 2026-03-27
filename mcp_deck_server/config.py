@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 class DeckConfig:
     nc_url: str
     nc_user: str
-    nc_app_password: str
+    nc_app_password: str = dataclasses.field(repr=False)
     nc_api_version: str = "v1.1"
     transport: Literal["stdio", "sse"] = "stdio"
     request_timeout: float = 30.0

@@ -6,7 +6,7 @@
   "owner": {
     "primaryKey": "admin",
     "uid": "admin",
-    "displayName": "Administrator"
+    "displayname": "Administrator"
   },
   "labels": [],
   "users": [],

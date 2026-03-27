@@ -7,7 +7,7 @@
     "owner": {
       "primaryKey": "admin",
       "uid": "admin",
-      "displayName": "Administrator"
+      "displayname": "Administrator"
     },
     "permissions": {
       "PERMISSION_READ": true,

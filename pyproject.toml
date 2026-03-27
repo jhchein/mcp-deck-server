@@ -1,7 +1,7 @@
 [project]
 name = "mcp-deck-server"
 version = "0.1.0"
-description = "Add your description here"
+description = "MCP tool server for Nextcloud Deck"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -24,9 +24,15 @@ dev = [
 line-length = 88
 target-version = "py313"
 
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
 [tool.pyright]
 pythonVersion = "3.13"
+typeCheckingMode = "standard"
 include = ["main.py", "mcp_deck_server"]
+venvPath = "."
+venv = ".venv"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

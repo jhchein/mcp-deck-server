@@ -1,80 +1,84 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
-from pydantic import BaseModel
-
-
-class Owner(BaseModel):
-    id: Optional[Union[int, str]] = None
-    displayName: Optional[str] = None
-    type: Optional[Union[str, int]] = None
-    primaryKey: Optional[str] = None
-    uid: Optional[str] = None
+from pydantic import BaseModel, ConfigDict
 
 
-class Label(BaseModel):
-    id: Optional[int] = None
-    title: Optional[str] = None
-    color: Optional[str] = None
-    archived: Optional[bool] = None
-    boardId: Optional[int] = None
-    cardId: Optional[int] = None
-    lastModified: Optional[int] = None
-    ETag: Optional[str] = None
+class DeckBaseModel(BaseModel):
+    model_config = ConfigDict(extra="allow")
 
 
-class Card(BaseModel):
-    id: Optional[int] = None
-    title: Optional[str] = None
-    description: Optional[str] = None
-    duedate: Optional[str] = None
-    type: Optional[Union[str, int]] = None
-    owner: Optional[Union[Owner, str]] = None
-    labels: Optional[List[Label]] = None
-    archived: Optional[bool] = None
-    order: Optional[int] = None
-    stackId: Optional[int] = None
-    lastModified: Optional[int] = None
-    lastEditor: Optional[Owner] = None
-    createdAt: Optional[int] = None
-    assignedUsers: Optional[List[Owner]] = None
-    attachments: Optional[List[Any]] = None
-    attachmentCount: Optional[int] = None
-    done: Optional[bool] = None
-    deletedAt: Optional[int] = None
-    commentsUnread: Optional[int] = None
-    commentsCount: Optional[int] = None
-    ETag: Optional[str] = None
-    overdue: Optional[int] = None
-    referenceData: Optional[Any] = None
+class Owner(DeckBaseModel):
+    id: int | str | None = None
+    displayname: str | None = None
+    type: str | int | None = None
+    primaryKey: str | None = None
+    uid: str | None = None
 
 
-class Stack(BaseModel):
-    id: Optional[int] = None
-    title: Optional[str] = None
-    cards: Optional[List[Card]] = None
-    order: Optional[int] = None
-    boardId: Optional[int] = None
-    deletedAt: Optional[int] = None
-    lastModified: Optional[int] = None
-    ETag: Optional[str] = None
+class Label(DeckBaseModel):
+    id: int | None = None
+    title: str | None = None
+    color: str | None = None
+    archived: bool | None = None
+    boardId: int | None = None
+    cardId: int | None = None
+    lastModified: int | None = None
+    ETag: str | None = None
 
 
-class Board(BaseModel):
-    id: Optional[int] = None
-    title: Optional[str] = None
-    stacks: Optional[List[Stack]] = None
-    color: Optional[str] = None
-    archived: Optional[bool] = None
-    labels: Optional[List[Label]] = None
-    acl: Optional[List[Any]] = None
-    permissions: Optional[Dict[str, Any]] = None
-    users: Optional[List[Owner]] = None
-    shared: Optional[int] = None
-    activeSessions: Optional[List[Any]] = None
-    deletedAt: Optional[int] = None
-    lastModified: Optional[int] = None
-    settings: Optional[Union[List[Any], Dict[str, Any]]] = None
-    ETag: Optional[str] = None
-    owner: Optional[Owner] = None
+class Card(DeckBaseModel):
+    id: int | None = None
+    title: str | None = None
+    description: str | None = None
+    duedate: str | None = None
+    type: str | int | None = None
+    owner: Owner | str | None = None
+    labels: list[Label] | None = None
+    archived: bool | None = None
+    order: int | None = None
+    stackId: int | None = None
+    lastModified: int | None = None
+    lastEditor: Owner | str | None = None
+    createdAt: int | None = None
+    assignedUsers: list[Owner] | None = None
+    attachments: list[Any] | None = None
+    attachmentCount: int | None = None
+    done: bool | None = None
+    deletedAt: int | None = None
+    commentsUnread: int | None = None
+    commentsCount: int | None = None
+    ETag: str | None = None
+    overdue: int | None = None
+    referenceData: Any | None = None
+
+
+class Stack(DeckBaseModel):
+    id: int | None = None
+    title: str | None = None
+    cards: list[Card] | None = None
+    order: int | None = None
+    boardId: int | None = None
+    deletedAt: int | None = None
+    lastModified: int | None = None
+    ETag: str | None = None
+
+
+class Board(DeckBaseModel):
+    id: int | None = None
+    title: str | None = None
+    stacks: list[Stack] | None = None
+    color: str | None = None
+    archived: bool | None = None
+    labels: list[Label] | None = None
+    acl: list[Any] | None = None
+    permissions: dict[str, Any] | None = None
+    users: list[Owner] | None = None
+    shared: int | None = None
+    activeSessions: list[Any] | None = None
+    deletedAt: int | None = None
+    lastModified: int | None = None
+    settings: list[Any] | dict[str, Any] | None = None
+    ETag: str | None = None
+    owner: Owner | None = None

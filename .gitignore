@@ -3,3 +3,19 @@
 .venv
 __pycache__
 *.pyc
+.coverage
+.pytest_cache
+.ruff_cache
+
+# AI assistant config (personal workflow, not project code)
+.github/agents/
+.github/prompts/
+.github/skills/
+.github/copilot-instructions.md
+.github/instructions/
+.github/context/
+
+# Project-spec working docs (decisions/ and interfaces.md are tracked)
+project-spec/constraints.md
+project-spec/infrastructure.md
+project-spec/implementation-plan.md

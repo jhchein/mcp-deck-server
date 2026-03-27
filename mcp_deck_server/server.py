@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -48,7 +48,7 @@ def get_runtime() -> DeckRuntime:
 
 
 @mcp.tool()
-async def list_boards() -> List[Board]:
+async def list_boards() -> list[Board]:
     runtime = get_runtime()
     response = await make_nc_request(runtime.client, runtime.config, "GET", "/boards")
     return [Board.model_validate(board) for board in response]
@@ -67,7 +67,7 @@ async def get_board(board_id: int) -> Board:
 
 
 @mcp.tool()
-async def list_stacks(board_id: int) -> List[Stack]:
+async def list_stacks(board_id: int) -> list[Stack]:
     runtime = get_runtime()
     response = await make_nc_request(
         runtime.client,
@@ -79,15 +79,21 @@ async def list_stacks(board_id: int) -> List[Stack]:
 
 
 @mcp.tool()
-async def list_cards(board_id: int, stack_id: int) -> List[Card]:
+async def list_cards(board_id: int, stack_id: int) -> list[Card]:
+    """List cards in a stack. Extracts cards from the stacks endpoint
+    (no dedicated list-cards endpoint exists in the Deck API)."""
     runtime = get_runtime()
-    response = await make_nc_request(
+    stacks_data = await make_nc_request(
         runtime.client,
         runtime.config,
         "GET",
-        f"/boards/{board_id}/stacks/{stack_id}/cards",
+        f"/boards/{board_id}/stacks",
     )
-    return [Card.model_validate(card) for card in response]
+    for stack_data in stacks_data:
+        stack = Stack.model_validate(stack_data)
+        if stack.id == stack_id:
+            return stack.cards or []
+    raise ValueError(f"Stack {stack_id} not found on board {board_id}")
 
 
 @mcp.tool()
@@ -130,11 +136,11 @@ async def update_card(
     board_id: int,
     stack_id: int,
     card_id: int,
-    title: Optional[str] = None,
-    description: Optional[str] = None,
-    duedate: Optional[str] = None,
+    title: str | None = None,
+    description: str | None = None,
+    duedate: str | None = None,
     card_type: str = "plain",
-    owner: Optional[dict] = None,
+    owner: dict | None = None,
 ) -> Card:
     runtime = get_runtime()
     current_card_data = await make_nc_request(
@@ -155,17 +161,20 @@ async def update_card(
         else:
             owner_payload = current_card.owner
 
-    payload = {
-        key: value
-        for key, value in {
-            "title": title,
-            "description": description,
-            "duedate": duedate,
-            "type": card_type,
-            "owner": owner_payload,
-        }.items()
-        if value is not None
+    payload: dict[str, Any] = {
+        "title": title,
+        "type": card_type,
     }
+
+    # `None` means "leave unchanged". Empty string explicitly clears string fields.
+    if description is not None:
+        payload["description"] = description
+    if duedate is not None:
+        payload["duedate"] = duedate
+
+    # If owner is omitted, preserve current owner from the fetched card.
+    if owner_payload is not None:
+        payload["owner"] = owner_payload
 
     response = await make_nc_request(
         runtime.client,
@@ -188,12 +197,16 @@ async def move_card(board_id: int, card_id: int, target_stack_name: str) -> Card
     )
     stacks = [Stack.model_validate(stack_data) for stack_data in stacks_data]
 
-    target_stack_id: Optional[int] = None
-    current_stack_id: Optional[int] = None
-    current_card_order: Optional[int] = None
+    target_stack_id: int | None = None
+    current_stack_id: int | None = None
+    current_card_order: int | None = None
 
     for stack in stacks:
-        if stack.title and stack.title.lower() == target_stack_name.lower() and stack.id is not None:
+        if (
+            stack.title
+            and stack.title.lower() == target_stack_name.lower()
+            and stack.id is not None
+        ):
             target_stack_id = stack.id
 
         for card in stack.cards or []:
@@ -204,12 +217,12 @@ async def move_card(board_id: int, card_id: int, target_stack_name: str) -> Card
                 current_card_order = card.order
 
     if target_stack_id is None:
-        available_stacks = ", ".join(
-            stack.title or "<untitled>" for stack in stacks
+        available_stacks = ", ".join(stack.title or "<untitled>" for stack in stacks)
+        error_message = (
+            f"Stack '{target_stack_name}' not found. "
+            f"Available stacks: {available_stacks}"
         )
-        raise ValueError(
-            f"Stack '{target_stack_name}' not found. Available stacks: {available_stacks}"
-        )
+        raise ValueError(error_message)
 
     if current_stack_id is None:
         raise ValueError(f"Card with ID {card_id} not found on board {board_id}")
@@ -225,7 +238,19 @@ async def move_card(board_id: int, card_id: int, target_stack_name: str) -> Card
     if isinstance(response, list):
         if not response:
             raise ValueError("Empty list response from card reorder endpoint")
-        return Card.model_validate(response[0])
+        # The reorder endpoint returns all affected cards; find ours by ID.
+        for item in response:
+            validated = Card.model_validate(item)
+            if validated.id == card_id:
+                return validated
+        # Card not in response list — fetch it directly.
+        refreshed = await make_nc_request(
+            runtime.client,
+            runtime.config,
+            "GET",
+            f"/boards/{board_id}/stacks/{target_stack_id}/cards/{card_id}",
+        )
+        return Card.model_validate(refreshed)
     return Card.model_validate(response)
 
 
@@ -247,7 +272,7 @@ async def remove_label_from_card(
     stack_id: int,
     card_id: int,
     label_id: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     runtime = get_runtime()
     payload = {"labelId": label_id}
     result = await make_nc_request(
@@ -270,7 +295,7 @@ async def assign_label_to_card(
     stack_id: int,
     card_id: int,
     label_id: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     runtime = get_runtime()
     payload = {"labelId": label_id}
     result = await make_nc_request(
@@ -278,6 +303,52 @@ async def assign_label_to_card(
         runtime.config,
         "PUT",
         f"/boards/{board_id}/stacks/{stack_id}/cards/{card_id}/assignLabel",
+        json=payload,
+    )
+    if result is None:
+        return {"success": True}
+    if not isinstance(result, dict):
+        return {"success": True, "raw": result}
+    return result
+
+
+@mcp.tool()
+async def assign_user_to_card(
+    board_id: int,
+    stack_id: int,
+    card_id: int,
+    user_id: str,
+) -> dict[str, Any]:
+    runtime = get_runtime()
+    payload = {"userId": user_id}
+    result = await make_nc_request(
+        runtime.client,
+        runtime.config,
+        "PUT",
+        f"/boards/{board_id}/stacks/{stack_id}/cards/{card_id}/assignUser",
+        json=payload,
+    )
+    if result is None:
+        return {"success": True}
+    if not isinstance(result, dict):
+        return {"success": True, "raw": result}
+    return result
+
+
+@mcp.tool()
+async def unassign_user_from_card(
+    board_id: int,
+    stack_id: int,
+    card_id: int,
+    user_id: str,
+) -> dict[str, Any]:
+    runtime = get_runtime()
+    payload = {"userId": user_id}
+    result = await make_nc_request(
+        runtime.client,
+        runtime.config,
+        "PUT",
+        f"/boards/{board_id}/stacks/{stack_id}/cards/{card_id}/unassignUser",
         json=payload,
     )
     if result is None:

@@ -8,7 +8,6 @@ from mcp_deck_server.models import Board, Card, Stack
 from tests.helpers import load_fixture
 
 
-
 @pytest.fixture
 def test_config() -> DeckConfig:
     return DeckConfig(

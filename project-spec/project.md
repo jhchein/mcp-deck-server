@@ -16,7 +16,12 @@
 
 ## Non-goals
 
-- _TBD_ (none specified yet)
+- **Comments API** — uses OCS base URL (`/ocs/v2.php/...`), has pagination, would require second client configuration path. Revisit if user demand emerges.
+- **Attachment management** — multipart file upload/download, fundamentally different from JSON-only tool operations.
+- **Board/Stack/Label CRUD** (create, update, delete) — current scope is card-centric operations. Board/stack/label structure is managed via the Nextcloud web UI.
+- **ACL / sharing management** — permission management is an admin task, not an agent task.
+- **Session management** — real-time liveness/sync for collaboration UI, not relevant for MCP tools.
+- **Board import** — API v1.2 (unreleased), niche use case.
 
 ## Tech Stack
 

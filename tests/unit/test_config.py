@@ -6,7 +6,9 @@ from mcp_deck_server.config import load_config
 
 
 @pytest.mark.parametrize("missing_var", ["NC_URL", "NC_USER", "NC_APP_PASSWORD"])
-def test_load_config_missing_required(monkeypatch: pytest.MonkeyPatch, missing_var: str) -> None:
+def test_load_config_missing_required(
+    monkeypatch: pytest.MonkeyPatch, missing_var: str
+) -> None:
     monkeypatch.setenv("NC_URL", "https://nextcloud.example.test")
     monkeypatch.setenv("NC_USER", "alice")
     monkeypatch.setenv("NC_APP_PASSWORD", "secret")
