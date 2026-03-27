@@ -45,7 +45,7 @@ class Card(DeckBaseModel):
     assignedUsers: list[Owner] | None = None
     attachments: list[Any] | None = None
     attachmentCount: int | None = None
-    done: bool | None = None
+    done: str | bool | None = None
     deletedAt: int | None = None
     commentsUnread: int | None = None
     commentsCount: int | None = None
