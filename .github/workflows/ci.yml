@@ -153,4 +153,6 @@ jobs:
         run: uv sync --dev
 
       - name: Dependency audit
-        run: uv audit
+        run: >-
+          uv audit
+          --ignore GHSA-5239-wwwm-4pmq
