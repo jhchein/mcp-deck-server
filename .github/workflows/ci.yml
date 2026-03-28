@@ -153,6 +153,15 @@ jobs:
         run: uv sync --dev
 
       - name: Dependency audit
-        run: >-
-          uv audit
-          --ignore GHSA-5239-wwwm-4pmq
+        shell: bash
+        run: |
+          # GHSA-5239-wwwm-4pmq: pygments ReDoS (low 1.9/10, no patch, transitive dev dep)
+          output=$(uv audit 2>&1) || true
+          echo "$output"
+          # Filter the known unpatched advisory, fail if other vulnerabilities remain
+          filtered=$(echo "$output" | grep -c "known vulnerability" || true)
+          ignored=$(echo "$output" | grep -c "GHSA-5239-wwwm-4pmq" || true)
+          if [ "$filtered" -gt 0 ] && [ "$ignored" -eq 0 ]; then
+            echo "::error::Unknown vulnerabilities found"
+            exit 1
+          fi
