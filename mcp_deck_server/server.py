@@ -9,7 +9,7 @@ from mcp.server.fastmcp import FastMCP
 
 from .client import make_nc_request
 from .config import DeckConfig, load_config
-from .models import Board, Card, Owner, Stack
+from .models import Board, Card, CardResult, Owner, Stack
 
 
 @dataclass(frozen=True)
@@ -39,12 +39,41 @@ async def deck_lifespan(_: FastMCP):
 mcp = FastMCP("deck", lifespan=deck_lifespan)
 
 
+def _resolve_text_field(value: str | None, current: str | None) -> str:
+    if value is None:
+        return current or ""
+    return value
+
+
+def _resolve_datetime_field(value: str | None, current: str | None) -> str | None:
+    if value is None:
+        return current
+    if value == "":
+        return None
+    return value
+
+
 def get_runtime() -> DeckRuntime:
     context = mcp.get_context()
     runtime = context.request_context.lifespan_context
     if not isinstance(runtime, DeckRuntime):
         raise ValueError("Lifespan context is unavailable")
     return runtime
+
+
+def _card_is_assigned_to_user(card: Card, user_id: str) -> bool:
+    for assignment in card.assignedUsers or []:
+        participant = assignment.participant
+        if participant is not None and participant.uid == user_id:
+            return True
+    return False
+
+
+def _card_matches_done_filter(card: Card, done: bool | None) -> bool:
+    if done is None:
+        return True
+    # Card.done is an ISO-8601 datetime string or None, not a boolean.
+    return (card.done is not None) is done
 
 
 @mcp.tool()
@@ -97,6 +126,58 @@ async def list_cards(board_id: int, stack_id: int) -> list[Card]:
 
 
 @mcp.tool()
+async def get_assigned_cards(
+    user_id: str | None = None,
+    board_ids: list[int] | None = None,
+    done: bool | None = None,
+) -> list[CardResult]:
+    runtime = get_runtime()
+    resolved_user_id = user_id or runtime.config.nc_user
+
+    if board_ids:
+        boards_to_query = [(board_id, "") for board_id in board_ids]
+    else:
+        boards_response = await make_nc_request(
+            runtime.client,
+            runtime.config,
+            "GET",
+            "/boards",
+        )
+        boards = [Board.model_validate(board_data) for board_data in boards_response]
+        boards_to_query = [
+            (board.id, board.title or "") for board in boards if board.id is not None
+        ]
+
+    results: list[CardResult] = []
+    for board_id, board_title in boards_to_query:
+        stacks_response = await make_nc_request(
+            runtime.client,
+            runtime.config,
+            "GET",
+            f"/boards/{board_id}/stacks",
+        )
+        stacks = [Stack.model_validate(stack_data) for stack_data in stacks_response]
+        for stack in stacks:
+            if stack.id is None:
+                continue
+            for card in stack.cards or []:
+                if not _card_is_assigned_to_user(card, resolved_user_id):
+                    continue
+                if not _card_matches_done_filter(card, done):
+                    continue
+                results.append(
+                    CardResult(
+                        board_id=board_id,
+                        board_title=board_title,
+                        stack_id=stack.id,
+                        stack_title=stack.title or "",
+                        card=card,
+                    )
+                )
+    return results
+
+
+@mcp.tool()
 async def create_card(
     board_id: int,
     stack_id: int,
@@ -139,8 +220,10 @@ async def update_card(
     title: str | None = None,
     description: str | None = None,
     duedate: str | None = None,
-    card_type: str = "plain",
-    owner: dict | None = None,
+    done: str | None = None,
+    card_type: str | None = None,
+    owner: dict[str, Any] | None = None,
+    order: int | None = None,
 ) -> Card:
     runtime = get_runtime()
     current_card_data = await make_nc_request(
@@ -161,20 +244,24 @@ async def update_card(
         else:
             owner_payload = current_card.owner
 
+    resolved_description = _resolve_text_field(description, current_card.description)
+    resolved_duedate = _resolve_datetime_field(duedate, current_card.duedate)
+    resolved_done = _resolve_datetime_field(done, current_card.done)
+
     payload: dict[str, Any] = {
         "title": title,
-        "type": card_type,
+        "description": resolved_description,
+        "type": card_type if card_type is not None else (current_card.type or "plain"),
+        "order": order if order is not None else (current_card.order or 0),
+        "duedate": resolved_duedate,
+        "done": resolved_done,
     }
-
-    # `None` means "leave unchanged". Empty string explicitly clears string fields.
-    if description is not None:
-        payload["description"] = description
-    if duedate is not None:
-        payload["duedate"] = duedate
 
     # If owner is omitted, preserve current owner from the fetched card.
     if owner_payload is not None:
         payload["owner"] = owner_payload
+    else:
+        payload["owner"] = runtime.config.nc_user
 
     response = await make_nc_request(
         runtime.client,

@@ -5,9 +5,12 @@ from collections.abc import AsyncIterator
 
 import httpx
 import pytest
+from dotenv import load_dotenv
 
 from mcp_deck_server.config import DeckConfig
 from mcp_deck_server.server import DeckRuntime
+
+load_dotenv()
 
 
 def _get_required_env(var_name: str) -> str:

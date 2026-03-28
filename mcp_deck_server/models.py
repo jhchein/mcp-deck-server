@@ -28,6 +28,13 @@ class Label(DeckBaseModel):
     ETag: str | None = None
 
 
+class Assignment(DeckBaseModel):
+    id: int | None = None
+    participant: Owner | None = None
+    cardId: int | None = None
+    type: int | str | None = None
+
+
 class Card(DeckBaseModel):
     id: int | None = None
     title: str | None = None
@@ -42,10 +49,11 @@ class Card(DeckBaseModel):
     lastModified: int | None = None
     lastEditor: Owner | str | None = None
     createdAt: int | None = None
-    assignedUsers: list[Owner] | None = None
+    assignedUsers: list[Assignment] | None = None
     attachments: list[Any] | None = None
     attachmentCount: int | None = None
-    done: str | bool | None = None
+    # ISO-8601 datetime or null; same semantics as duedate.
+    done: str | None = None
     deletedAt: int | None = None
     commentsUnread: int | None = None
     commentsCount: int | None = None
@@ -63,6 +71,14 @@ class Stack(DeckBaseModel):
     deletedAt: int | None = None
     lastModified: int | None = None
     ETag: str | None = None
+
+
+class CardResult(DeckBaseModel):
+    board_id: int
+    board_title: str
+    stack_id: int
+    stack_title: str
+    card: Card
 
 
 class Board(DeckBaseModel):

@@ -52,3 +52,15 @@ def test_load_config_timeout_validation(monkeypatch: pytest.MonkeyPatch) -> None
 
     with pytest.raises(ValueError, match="MCP_REQUEST_TIMEOUT"):
         load_config()
+
+
+def test_load_config_timeout_must_be_positive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NC_URL", "https://nextcloud.example.test")
+    monkeypatch.setenv("NC_USER", "alice")
+    monkeypatch.setenv("NC_APP_PASSWORD", "secret")
+    monkeypatch.setenv("MCP_REQUEST_TIMEOUT", "0")
+
+    with pytest.raises(ValueError, match="MCP_REQUEST_TIMEOUT must be greater than 0"):
+        load_config()
