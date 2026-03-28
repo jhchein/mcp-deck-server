@@ -880,12 +880,24 @@ async def test_get_assigned_cards_skips_stack_with_null_id(
     patched_runtime: None, runtime: DeckRuntime
 ) -> None:
     stacks_payload = [
-        {"id": None, "title": "Ghost", "boardId": 10, "order": 0, "cards": [
-            load_fixture("assigned_card.json"),
-        ]},
-        {"id": 5, "title": "Real", "boardId": 10, "order": 1, "cards": [
-            load_fixture("assigned_card.json"),
-        ]},
+        {
+            "id": None,
+            "title": "Ghost",
+            "boardId": 10,
+            "order": 0,
+            "cards": [
+                load_fixture("assigned_card.json"),
+            ],
+        },
+        {
+            "id": 5,
+            "title": "Real",
+            "boardId": 10,
+            "order": 1,
+            "cards": [
+                load_fixture("assigned_card.json"),
+            ],
+        },
     ]
 
     with respx.mock(assert_all_called=True) as router:
