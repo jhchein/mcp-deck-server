@@ -8,21 +8,22 @@ All tools are async, registered via `@mcp.tool()` on the `FastMCP("deck")` insta
 Tools access the shared httpx client and config via the FastMCP lifespan context.
 Tools call `make_nc_request` directly — never other tool functions (tool independence convention).
 
-| Tool                      | Parameters                                                                                       | Returns       |
-| ------------------------- | ------------------------------------------------------------------------------------------------ | ------------- | ----------------------------------------------------------------------------------------- |
-| `list_boards`             | —                                                                                                | `List[Board]` |
-| `get_board`               | `board_id: int`                                                                                  | `Board`       |
-| `list_stacks`             | `board_id: int`                                                                                  | `List[Stack]` |
-| `list_cards`              | `board_id: int, stack_id: int`                                                                   | `List[Card]`  | <!-- extracts from stacks endpoint; no dedicated cards-list API exists (decision 014) --> |
-| `create_card`             | `board_id: int, stack_id: int, title: str, description: str = ""`                                | `Card`        |
-| `get_card`                | `board_id: int, stack_id: int, card_id: int`                                                     | `Card`        |
-| `update_card`             | `board_id: int, stack_id: int, card_id: int, title?, description?, duedate?, card_type?, owner?` | `Card`        |
-| `move_card`               | `board_id: int, card_id: int, target_stack_name: str`                                            | `Card`        |
-| `archive_card`            | `board_id: int, stack_id: int, card_id: int`                                                     | `Card`        |
-| `assign_label_to_card`    | `board_id: int, stack_id: int, card_id: int, label_id: int`                                      | `Dict`        |
-| `remove_label_from_card`  | `board_id: int, stack_id: int, card_id: int, label_id: int`                                      | `Dict`        |
-| `assign_user_to_card`     | `board_id: int, stack_id: int, card_id: int, user_id: str`                                       | `Dict`        |
-| `unassign_user_from_card` | `board_id: int, stack_id: int, card_id: int, user_id: str`                                       | `Dict`        |
+| Tool                      | Parameters                                                                                       | Returns            |
+| ------------------------- | ------------------------------------------------------------------------------------------------ | ------------------ | ----------------------------------------------------------------------------------------- |
+| `list_boards`             | —                                                                                                | `List[Board]`      |
+| `get_board`               | `board_id: int`                                                                                  | `Board`            |
+| `list_stacks`             | `board_id: int`                                                                                  | `List[Stack]`      |
+| `list_cards`              | `board_id: int, stack_id: int`                                                                   | `List[Card]`       | <!-- extracts from stacks endpoint; no dedicated cards-list API exists (decision 014) --> |
+| `create_card`             | `board_id: int, stack_id: int, title: str, description: str = ""`                                | `Card`             |
+| `get_card`                | `board_id: int, stack_id: int, card_id: int`                                                     | `Card`             |
+| `update_card`             | `board_id: int, stack_id: int, card_id: int, title?, description?, duedate?, done?, card_type?, owner?, order?` | `Card` | <!-- decision 016: exhaustive fetch-merge; done/order added; card_type default changed to None -->
+| `move_card`               | `board_id: int, card_id: int, target_stack_name: str`                                            | `Card`             |
+| `archive_card`            | `board_id: int, stack_id: int, card_id: int`                                                     | `Card`             |
+| `assign_label_to_card`    | `board_id: int, stack_id: int, card_id: int, label_id: int`                                      | `Dict`             |
+| `remove_label_from_card`  | `board_id: int, stack_id: int, card_id: int, label_id: int`                                      | `Dict`             |
+| `assign_user_to_card`     | `board_id: int, stack_id: int, card_id: int, user_id: str`                                       | `Dict`             |
+| `unassign_user_from_card` | `board_id: int, stack_id: int, card_id: int, user_id: str`                                       | `Dict`             |
+| `get_assigned_cards`      | `user_id?: str, board_ids?: list[int], done?: bool`                                              | `List[CardResult]` | <!-- decision 015; done is a filter predicate (truthy match on card.done datetime), not a value to write -->  |
 
 ## Nextcloud Deck API
 
@@ -30,10 +31,35 @@ Tools call `make_nc_request` directly — never other tool functions (tool indep
 - Auth: HTTP Basic (`NC_USER` / `NC_APP_PASSWORD`)
 - Headers: `OCS-APIRequest: true`, `Content-Type: application/json`
 - PUT card is **full replacement** — all fields required (decision 013)
+- PUT card required fields (live-validated, decision 016): `title`, `type`, `owner`. Optional: `description`, `order`, `duedate`, `done`
+- Omitting optional fields from PUT resets them to defaults (`""` / `null` / `0`) — full payload must always be sent
+- `done` field is an ISO-8601 datetime string (like `duedate`), NOT a boolean. `null` = not done, datetime = done. Sending bool/int crashes the server (500)
 - No pagination on board/stack/card endpoints (only OCS Comments)
 - ETags supported on GET endpoints (`If-None-Match` → 304)
 - `archive_card` endpoint is **undocumented** — works empirically, no official alternative (decision 013)
-- `owner` field in PUT card payload is **undocumented** — sent pragmatically (decision 013)
+- `owner` field in PUT card payload is **undocumented but required** — server returns 400 without it (decisions 013, 016)
+
+## Models — `Assignment`, `CardResult` (decision 015), `Card.done` narrowing (decision 016)
+
+```python
+class Assignment(DeckBaseModel):
+    id: int | None = None
+    participant: Owner | None = None
+    cardId: int | None = None
+    type: int | str | None = None
+
+class CardResult(DeckBaseModel):
+    board_id: int
+    board_title: str
+    stack_id: int
+    stack_title: str
+    card: Card
+```
+
+- `Card.assignedUsers` type changes from `list[Owner] | None` to `list[Assignment] | None`
+- `Card.done` type changes from `str | bool | None` to `str | None` — it's an ISO-8601 datetime, not a boolean (decision 016)
+- `Assignment` matches the actual Deck API response shape (`assignUser` endpoint returns `{ id, participant: Owner, cardId, type }`)
+- `CardResult` is a read-only view model for `get_assigned_cards` — enriches cards with board/stack context
 
 ## Exception Hierarchy
 

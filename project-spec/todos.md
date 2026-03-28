@@ -13,7 +13,7 @@ All P0 items complete:
 - [x] Rename `update_card` `type` parameter to `card_type` (shadows builtin)
 - [x] Refactor `update_card` payload: `None`=keep, `""`=clear convention (decision 012)
 
-## Phase 2: Tests & Fixtures (decisions 006, 008) — in progress
+## ~~Phase 2: Tests & Fixtures~~ (decisions 006, 008) ✅
 
 Done:
 
@@ -27,19 +27,19 @@ Done:
 - [x] Write `tests/unit/test_tools.py` — comprehensive tool coverage (50 unit tests total): happy paths, error branches, edge cases
 - [x] Coverage gate: 99.65% total, `server.py` at 100%
 
-Remaining:
+All remaining items completed:
 
 - [x] Research official Deck API docs and source; resolve key questions (decision 013: stacks embed cards ✓, full PUT confirmed ✓, no archive endpoint documented)
 - [x] Define non-goals explicitly in `project-spec/project.md`
 - [x] Identify new endpoints/tools → `assignUser`/`unassignUser` promoted; comments/attachments/CRUD scoped as non-goals
-- [x] Apply model corrections: rename `Owner.displayName` → `displayname`, narrow `Board.settings` to `dict | None`
+- [x] Apply model corrections: rename `Owner.displayName` → `displayname`, widen `Board.settings` to `list | dict | None` (decision 014 override)
 - [x] Validate Pydantic models against actual API responses (live instance); apply further corrections (decision 014)
 - [x] Add `assign_user_to_card` and `unassign_user_from_card` tools
 - [x] Write communication robustness tests — malformed JSON, large payloads, concurrent calls
 - [x] Scaffold `tests/integration/test_deck_roundtrip.py` — full CRUD round-trip (marker-gated)
 - [x] Scaffold `tests/test_timing.py` — client reuse vs per-request, move_card optimization (`time.perf_counter`)
 
-## Phase 3: CI pipeline (decision 007) — in progress
+## Phase 3: CI pipeline (decision 007) — branch protection remaining
 
 Done:
 
@@ -96,3 +96,46 @@ Remaining:
 - [ ] Comments API support (OCS base URL, pagination — currently a non-goal)
 - [ ] Attachment management (multipart upload — currently a non-goal)
 - [ ] Board/Stack/Label CRUD tools (currently a non-goal)
+
+## ~~Phase 7: `get_assigned_cards` tool~~ (decision 015) ✅
+
+Prerequisite: validate `assignedUsers` shape against live API — confirmed via live contract test.
+
+Model fix (`Assignment`):
+
+- [x] Capture live API response fixture with populated `assignedUsers` (hand-crafted from docs; shape confirmed by passing live contract test)
+- [x] Add `Assignment` model to `models.py`
+- [x] Change `Card.assignedUsers` from `list[Owner] | None` to `list[Assignment] | None`
+- [x] Add `Assignment` parsing tests in `test_models.py`
+- [x] Validate existing unit tests still pass (fixture has `assignedUsers: null`, should be unaffected)
+
+New tool:
+
+- [x] Add `CardResult` model to `models.py`
+- [x] Implement `get_assigned_cards` tool in `server.py`
+- [x] Add unit tests: default user_id (self), explicit user_id, board_ids filter, done filter, empty results, no matching user
+- [x] Add integration test coverage for `get_assigned_cards` in live contract test
+- [ ] Update `README.md` / tool reference when Phase 6 docs exist
+
+## ~~Phase 8: `update_card` exhaustive merge fix~~ (decision 016) ✅
+
+Model fix:
+
+- [x] Change `Card.done` type from `str | bool | None` to `str | None` in `models.py`
+- [x] Add comment on `done` field: `# ISO-8601 datetime or null; same semantics as duedate`
+- [x] Add `card_done.json` test fixture with `"done": "2026-03-28T12:00:00+00:00"`
+- [x] Update `test_models.py` for done-as-datetime parsing
+
+Tool fix:
+
+- [x] Rewrite `update_card` with exhaustive fetch-merge (all 7 fields always in payload)
+- [x] Change `card_type` default from `"plain"` to `None`
+- [x] Add `done`, `order` parameters to `update_card`
+- [x] Preserve `None`=keep / `""`=clear semantics for `duedate` and `done`
+- [x] Update all `update_card` unit tests — payload assertions must check all 7 fields
+- [x] Add new unit tests: done preservation, done clearing, order preservation, card_type preservation
+- [x] Add integration test coverage for update_card field preservation
+
+Cleanup:
+
+- [x] Delete `tests/integration/test_put_field_reset.py` (investigation artifact)

@@ -92,6 +92,126 @@ async def test_list_cards_stack_not_found(
 
 
 @pytest.mark.asyncio
+async def test_get_assigned_cards_defaults_to_self_across_accessible_boards(
+    patched_runtime: None, runtime: DeckRuntime
+) -> None:
+    first_board_stacks = json.loads(json.dumps(load_fixture("stacks_list.json")))
+    first_board_stacks[0]["cards"] = [load_fixture("assigned_card.json")]
+
+    second_board_stacks = json.loads(json.dumps(load_fixture("stacks_list.json")))
+    second_board_stacks[0]["cards"] = []
+    second_board_stacks[1]["cards"] = [load_fixture("assigned_card.json")]
+    second_board_stacks[1]["cards"][0]["id"] = 82
+    second_board_stacks[1]["cards"][0]["stackId"] = 5
+    second_board_stacks[1]["cards"][0]["title"] = "Second board task"
+
+    with respx.mock(assert_all_called=True) as router:
+        router.route(
+            method="GET",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards",
+        ).mock(
+            return_value=httpx.Response(
+                200,
+                json=[
+                    *load_fixture("boards_list.json"),
+                    {"id": 11, "title": "Board two"},
+                ],
+            )
+        )
+        router.route(
+            method="GET",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks",
+        ).mock(return_value=httpx.Response(200, json=first_board_stacks))
+        router.route(
+            method="GET",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/11/stacks",
+        ).mock(return_value=httpx.Response(200, json=second_board_stacks))
+
+        cards = await server.get_assigned_cards()
+
+    assert len(cards) == 2
+    assert cards[0].board_id == 10
+    assert cards[0].card.assignedUsers is not None
+    assert cards[0].card.assignedUsers[0].participant is not None
+    assert cards[0].card.assignedUsers[0].participant.uid == runtime.config.nc_user
+    assert cards[1].board_id == 11
+
+
+@pytest.mark.asyncio
+async def test_get_assigned_cards_uses_explicit_board_ids_without_listing_boards(
+    patched_runtime: None, runtime: DeckRuntime
+) -> None:
+    stacks_payload = json.loads(json.dumps(load_fixture("stacks_list.json")))
+    stacks_payload[0]["cards"] = [load_fixture("assigned_card.json")]
+
+    with respx.mock(assert_all_called=True) as router:
+        route = router.route(
+            method="GET",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks",
+        ).mock(return_value=httpx.Response(200, json=stacks_payload))
+
+        cards = await server.get_assigned_cards(board_ids=[10])
+
+    assert route.called
+    assert len(cards) == 1
+    assert cards[0].board_id == 10
+    assert cards[0].board_title == ""
+
+
+@pytest.mark.asyncio
+async def test_get_assigned_cards_filters_by_explicit_user_and_done(
+    patched_runtime: None, runtime: DeckRuntime
+) -> None:
+    matching_card = load_fixture("assigned_card.json")
+    done_card = json.loads(json.dumps(matching_card))
+    done_card["id"] = 82
+    done_card["title"] = "Done card"
+    done_card["done"] = "2026-03-28T12:00:00+00:00"
+
+    other_user_card = json.loads(json.dumps(matching_card))
+    other_user_card["id"] = 83
+    other_user_card["assignedUsers"][0]["participant"]["uid"] = "bob"
+
+    stacks_payload = json.loads(json.dumps(load_fixture("stacks_list.json")))
+    stacks_payload[0]["cards"] = [matching_card, done_card, other_user_card]
+
+    with respx.mock(assert_all_called=True) as router:
+        router.route(
+            method="GET",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks",
+        ).mock(return_value=httpx.Response(200, json=stacks_payload))
+
+        cards = await server.get_assigned_cards(
+            user_id="alice",
+            board_ids=[10],
+            done=True,
+        )
+
+    assert len(cards) == 1
+    assert cards[0].card.id == 82
+
+
+@pytest.mark.asyncio
+async def test_get_assigned_cards_returns_empty_when_no_matching_assignment(
+    patched_runtime: None, runtime: DeckRuntime
+) -> None:
+    unmatched_card = json.loads(json.dumps(load_fixture("assigned_card.json")))
+    unmatched_card["assignedUsers"][0]["participant"]["uid"] = "bob"
+    stacks_payload = json.loads(json.dumps(load_fixture("stacks_list.json")))
+    stacks_payload[0]["cards"] = [unmatched_card]
+
+    with respx.mock(assert_all_called=True) as router:
+        router.route(
+            method="GET",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks",
+        ).mock(return_value=httpx.Response(200, json=stacks_payload))
+
+        cards = await server.get_assigned_cards(board_ids=[10])
+
+    assert cards == []
+
+
+@pytest.mark.asyncio
 async def test_create_card(patched_runtime: None, runtime: DeckRuntime) -> None:
     captured_payload: dict[str, object] = {}
 
@@ -335,10 +455,12 @@ async def test_update_card_omitted_fields_are_preserved(
     assert get_route.called
     assert put_route.called
     assert captured_payload["title"] == "Test"
+    assert captured_payload["description"] == ""
+    assert captured_payload["duedate"] == "2019-12-24T19:29:30+00:00"
+    assert captured_payload["done"] is None
+    assert captured_payload["order"] == 999
     assert captured_payload["type"] == "plain"
     assert captured_payload["owner"] == "admin"
-    assert "description" not in captured_payload
-    assert "duedate" not in captured_payload
     assert card.id == 81
 
 
@@ -370,16 +492,20 @@ async def test_update_card_with_overrides(
             title="Renamed",
             description="Edited",
             duedate="2026-03-01T00:00:00+00:00",
+            done="2026-03-02T00:00:00+00:00",
             card_type="plain",
             owner={"uid": "alice"},
+            order=123,
         )
 
     assert route.called
     assert captured_payload["title"] == "Renamed"
     assert captured_payload["description"] == "Edited"
     assert captured_payload["duedate"] == "2026-03-01T00:00:00+00:00"
+    assert captured_payload["done"] == "2026-03-02T00:00:00+00:00"
     assert captured_payload["owner"] == {"uid": "alice"}
     assert captured_payload["type"] == "plain"
+    assert captured_payload["order"] == 123
 
 
 @pytest.mark.asyncio
@@ -403,12 +529,70 @@ async def test_update_card_empty_strings_clear_text_fields(
             url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/4/cards/81",
         ).mock(side_effect=capture_update)
 
-        await server.update_card(10, 4, 81, description="", duedate="")
+        await server.update_card(10, 4, 81, description="", duedate="", done="")
 
     assert get_route.called
     assert put_route.called
     assert captured_payload["description"] == ""
-    assert captured_payload["duedate"] == ""
+    assert captured_payload["duedate"] is None
+    assert captured_payload["done"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_card_preserves_existing_card_type_and_order(
+    patched_runtime: None, runtime: DeckRuntime
+) -> None:
+    captured_payload: dict[str, object] = {}
+    card_payload = load_fixture("card.json")
+    card_payload["type"] = "checklist"
+    card_payload["order"] = 42
+
+    def capture_update(request: httpx.Request) -> httpx.Response:
+        captured_payload.update(json.loads(request.content.decode("utf-8")))
+        return httpx.Response(200, json=card_payload)
+
+    with respx.mock(assert_all_called=True) as router:
+        router.route(
+            method="GET",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/4/cards/81",
+        ).mock(return_value=httpx.Response(200, json=card_payload))
+
+        router.route(
+            method="PUT",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/4/cards/81",
+        ).mock(side_effect=capture_update)
+
+        await server.update_card(10, 4, 81)
+
+    assert captured_payload["type"] == "checklist"
+    assert captured_payload["order"] == 42
+
+
+@pytest.mark.asyncio
+async def test_update_card_preserves_done_datetime_when_omitted(
+    patched_runtime: None, runtime: DeckRuntime
+) -> None:
+    captured_payload: dict[str, object] = {}
+    card_payload = load_fixture("card_done.json")
+
+    def capture_update(request: httpx.Request) -> httpx.Response:
+        captured_payload.update(json.loads(request.content.decode("utf-8")))
+        return httpx.Response(200, json=card_payload)
+
+    with respx.mock(assert_all_called=True) as router:
+        router.route(
+            method="GET",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/4/cards/81",
+        ).mock(return_value=httpx.Response(200, json=card_payload))
+
+        router.route(
+            method="PUT",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/4/cards/81",
+        ).mock(side_effect=capture_update)
+
+        await server.update_card(10, 4, 81)
+
+    assert captured_payload["done"] == "2026-03-28T12:00:00+00:00"
 
 
 @pytest.mark.asyncio
@@ -561,6 +745,9 @@ async def test_update_card_preserves_owner_from_owner_object(
         "uid": "admin",
         "displayname": "Administrator",
     }
+    assert captured_payload["description"] == ""
+    assert captured_payload["done"] is None
+    assert captured_payload["order"] == 999
 
 
 @pytest.mark.asyncio
@@ -686,3 +873,68 @@ async def test_unassign_user_from_card_with_raw_response_wraps_result(
 
     assert route.called
     assert result == {"success": True, "raw": ["ok"]}
+
+
+@pytest.mark.asyncio
+async def test_get_assigned_cards_skips_stack_with_null_id(
+    patched_runtime: None, runtime: DeckRuntime
+) -> None:
+    stacks_payload = [
+        {
+            "id": None,
+            "title": "Ghost",
+            "boardId": 10,
+            "order": 0,
+            "cards": [
+                load_fixture("assigned_card.json"),
+            ],
+        },
+        {
+            "id": 5,
+            "title": "Real",
+            "boardId": 10,
+            "order": 1,
+            "cards": [
+                load_fixture("assigned_card.json"),
+            ],
+        },
+    ]
+
+    with respx.mock(assert_all_called=True) as router:
+        router.route(
+            method="GET",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks",
+        ).mock(return_value=httpx.Response(200, json=stacks_payload))
+
+        cards = await server.get_assigned_cards(board_ids=[10])
+
+    assert len(cards) == 1
+    assert cards[0].stack_id == 5
+
+
+@pytest.mark.asyncio
+async def test_update_card_falls_back_to_config_user_when_owner_is_null(
+    patched_runtime: None, runtime: DeckRuntime
+) -> None:
+    captured_payload: dict[str, object] = {}
+    card_payload = json.loads(json.dumps(load_fixture("card.json")))
+    card_payload["owner"] = None
+
+    def capture_update(request: httpx.Request) -> httpx.Response:
+        captured_payload.update(json.loads(request.content.decode("utf-8")))
+        return httpx.Response(200, json=load_fixture("card.json"))
+
+    with respx.mock(assert_all_called=True) as router:
+        router.route(
+            method="GET",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/4/cards/81",
+        ).mock(return_value=httpx.Response(200, json=card_payload))
+
+        router.route(
+            method="PUT",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/4/cards/81",
+        ).mock(side_effect=capture_update)
+
+        await server.update_card(10, 4, 81)
+
+    assert captured_payload["owner"] == "alice"

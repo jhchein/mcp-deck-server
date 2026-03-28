@@ -1,9 +1,10 @@
 """Live contract tests — validate all tool endpoints against a real Nextcloud instance.
 
 Exercises every MCP tool endpoint in a single ordered round-trip:
-  list_boards → get_board → list_stacks → list_cards → create_card → get_card →
-  update_card → assign_label → remove_label → assign_user → unassign_user →
-  move_card → archive_card
+  list_boards → get_board → list_stacks → list_cards →
+  create_card → get_card → update_card → assign_label →
+  remove_label → assign_user → get_assigned_cards →
+  unassign_user → move_card → archive_card
 
 Requires NC_URL, NC_USER, NC_APP_PASSWORD environment variables.
 DECK_TEST_BOARD_ID is optional; if absent, the first board is used.
@@ -92,8 +93,19 @@ async def test_all_tool_endpoints_against_live_instance(
             card_id,
             title="live-contract-test-updated",
             description="updated by test_live_contracts",
+            duedate="2026-12-31T00:00:00+00:00",
         )
         assert updated.id == card_id
+
+        preserved = await server.update_card(
+            board_id,
+            stack_id,
+            card_id,
+            title="live-contract-test-preserved",
+        )
+        assert preserved.id == card_id
+        assert preserved.description == "updated by test_live_contracts"
+        assert preserved.duedate == "2026-12-31T00:00:00+00:00"
 
         # --- assign_label_to_card (only if board has labels) ---
         if board.labels:
@@ -117,6 +129,12 @@ async def test_all_tool_endpoints_against_live_instance(
                 board_id, stack_id, card_id, user_id
             )
             assert isinstance(assign_user_result, dict)
+
+            assigned_cards = await server.get_assigned_cards(
+                user_id=user_id,
+                board_ids=[board_id],
+            )
+            assert any(result.card.id == card_id for result in assigned_cards)
 
             # --- unassign_user_from_card ---
             unassign_user_result = await server.unassign_user_from_card(
