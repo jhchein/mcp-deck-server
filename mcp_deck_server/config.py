@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import dataclasses
 import os
-from typing import Literal, cast
 
 from dotenv import load_dotenv
 
@@ -13,7 +12,6 @@ class DeckConfig:
     nc_user: str
     nc_app_password: str = dataclasses.field(repr=False)
     nc_api_version: str = "v1.1"
-    transport: Literal["stdio", "sse"] = "stdio"
     request_timeout: float = 30.0
 
 
@@ -24,7 +22,6 @@ def load_config() -> DeckConfig:
     nc_user = os.getenv("NC_USER", "").strip()
     nc_app_password = os.getenv("NC_APP_PASSWORD", "").strip()
     nc_api_version = os.getenv("NC_API_VERSION", "v1.1").strip() or "v1.1"
-    transport = os.getenv("MCP_TRANSPORT", "stdio").strip().lower() or "stdio"
     request_timeout_raw = os.getenv("MCP_REQUEST_TIMEOUT", "30.0").strip() or "30.0"
 
     if not nc_url:
@@ -33,10 +30,6 @@ def load_config() -> DeckConfig:
         raise ValueError("NC_USER is required")
     if not nc_app_password:
         raise ValueError("NC_APP_PASSWORD is required")
-
-    if transport not in {"stdio", "sse"}:
-        raise ValueError("MCP_TRANSPORT must be one of: stdio, sse")
-    transport_literal = cast(Literal["stdio", "sse"], transport)
 
     try:
         request_timeout = float(request_timeout_raw)
@@ -51,6 +44,5 @@ def load_config() -> DeckConfig:
         nc_user=nc_user,
         nc_app_password=nc_app_password,
         nc_api_version=nc_api_version,
-        transport=transport_literal,
         request_timeout=request_timeout,
     )

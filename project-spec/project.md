@@ -8,10 +8,10 @@
 ## Goals
 
 - Expose Nextcloud Deck board/stack/card/label operations as MCP tools
-- Support both local stdio and remote SSE/HTTP transport
+- Optimize the MCP tool surface for local stdio-based agent workflows
 - Thoroughly tested with unit, integration, robustness, and performance tests
 - Well-documented (setup, usage, tool reference, architecture, security, performance)
-- Security-reviewed and hardened before remote transport is shipped
+- Security-reviewed and hardened for local use
 - Performance-validated against architectural decisions
 
 ## Non-goals
@@ -30,6 +30,6 @@
 - **Package manager**: uv
 - **Testing**: pytest, pytest-asyncio, respx, pytest-cov
 - **Linting/Typing**: ruff, pyright
-- **Hosting/Cloud**: Local stdio; remote SSE planned
+- **Hosting/Cloud**: Local stdio
 - **CI/CD**: GitHub Actions (lint → test → integration)
 - **Layout**: Flat `mcp_deck_server/` package at repo root (not `src/`)

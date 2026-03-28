@@ -38,7 +38,6 @@ async def live_runtime() -> AsyncIterator[DeckRuntime]:
         nc_user=_get_required_env("NC_USER"),
         nc_app_password=_get_required_env("NC_APP_PASSWORD"),
         nc_api_version=os.getenv("NC_API_VERSION", "v1.1").strip() or "v1.1",
-        transport="stdio",
         request_timeout=float(
             os.getenv("MCP_REQUEST_TIMEOUT", "30.0").strip() or "30.0"
         ),

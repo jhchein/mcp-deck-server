@@ -15,7 +15,6 @@ def test_config() -> DeckConfig:
         nc_user="alice",
         nc_app_password="app-password",
         nc_api_version="v1.1",
-        transport="stdio",
         request_timeout=30.0,
     )
 

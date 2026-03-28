@@ -9,7 +9,7 @@ All P0 items complete:
 - [x] Refactor `make_nc_request` to raise exceptions instead of returning error dicts (decision 002)
 - [x] Enforce tool independence: tools call `make_nc_request`, never other tools (decision 012)
 - [x] Fix `move_card` N+1 query — use stacks response cards directly (decision 003)
-- [x] Make transport configurable via `MCP_TRANSPORT` env var (decision 004)
+- [x] Make transport configurable via `MCP_TRANSPORT` env var (decision 004; later superseded by decision 017)
 - [x] Rename `update_card` `type` parameter to `card_type` (shadows builtin)
 - [x] Refactor `update_card` payload: `None`=keep, `""`=clear convention (decision 012)
 
@@ -60,7 +60,7 @@ Remaining:
 
 - [ ] Review credential handling (load, storage, leak vectors)
 - [ ] Review input validation (URL interpolation, SSRF risk)
-- [ ] Review transport security (stdio vs SSE exposure surface)
+- [ ] Review local stdio trust boundary and process-level exposure surface
 - [ ] Audit dependencies for known CVEs (`uv audit` or equivalent)
 - [ ] Review error information leakage to MCP clients
 - [ ] Investigate Nextcloud app password scope
@@ -139,3 +139,11 @@ Tool fix:
 Cleanup:
 
 - [x] Delete `tests/integration/test_put_field_reset.py` (investigation artifact)
+
+## ~~Phase 9: Agent ergonomics~~ (decision 017) ✅
+
+- [x] Add concise docstrings to all MCP tools in `server.py`
+- [x] Add targeted `Annotated[..., Field(description=...)]` hints for ambiguous parameters
+- [x] Keep full response models; do not introduce summary models yet
+- [x] Remove `MCP_TRANSPORT` support and hardcode stdio in `main.py`
+- [x] Update config tests and project-spec docs to reflect stdio-only transport
