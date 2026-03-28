@@ -1,7 +1,7 @@
 # Decision: Make transport configurable (stdio / sse)
 
 **Date:** 2026-02-21
-**Status:** Accepted
+**Status:** Superseded by [decision 017](../../2026-03-28/017-agent-ergonomics.md)
 
 ## Context
 

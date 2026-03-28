@@ -7,23 +7,24 @@ Contracts only — signatures, schemas, auth claims. Not implementation.
 All tools are async, registered via `@mcp.tool()` on the `FastMCP("deck")` instance in `server.py`.
 Tools access the shared httpx client and config via the FastMCP lifespan context.
 Tools call `make_nc_request` directly — never other tool functions (tool independence convention).
+Tool docstrings and `Annotated[..., Field(description=...)]` parameter hints are part of the agent-facing MCP schema contract (decision 017).
 
-| Tool                      | Parameters                                                                                       | Returns            |
-| ------------------------- | ------------------------------------------------------------------------------------------------ | ------------------ | ----------------------------------------------------------------------------------------- |
-| `list_boards`             | —                                                                                                | `List[Board]`      |
-| `get_board`               | `board_id: int`                                                                                  | `Board`            |
-| `list_stacks`             | `board_id: int`                                                                                  | `List[Stack]`      |
-| `list_cards`              | `board_id: int, stack_id: int`                                                                   | `List[Card]`       | <!-- extracts from stacks endpoint; no dedicated cards-list API exists (decision 014) --> |
-| `create_card`             | `board_id: int, stack_id: int, title: str, description: str = ""`                                | `Card`             |
-| `get_card`                | `board_id: int, stack_id: int, card_id: int`                                                     | `Card`             |
-| `update_card`             | `board_id: int, stack_id: int, card_id: int, title?, description?, duedate?, done?, card_type?, owner?, order?` | `Card` | <!-- decision 016: exhaustive fetch-merge; done/order added; card_type default changed to None -->
-| `move_card`               | `board_id: int, card_id: int, target_stack_name: str`                                            | `Card`             |
-| `archive_card`            | `board_id: int, stack_id: int, card_id: int`                                                     | `Card`             |
-| `assign_label_to_card`    | `board_id: int, stack_id: int, card_id: int, label_id: int`                                      | `Dict`             |
-| `remove_label_from_card`  | `board_id: int, stack_id: int, card_id: int, label_id: int`                                      | `Dict`             |
-| `assign_user_to_card`     | `board_id: int, stack_id: int, card_id: int, user_id: str`                                       | `Dict`             |
-| `unassign_user_from_card` | `board_id: int, stack_id: int, card_id: int, user_id: str`                                       | `Dict`             |
-| `get_assigned_cards`      | `user_id?: str, board_ids?: list[int], done?: bool`                                              | `List[CardResult]` | <!-- decision 015; done is a filter predicate (truthy match on card.done datetime), not a value to write -->  |
+| Tool                      | Parameters                                                                                                      | Returns            |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `list_boards`             | —                                                                                                               | `List[Board]`      |
+| `get_board`               | `board_id: int`                                                                                                 | `Board`            |
+| `list_stacks`             | `board_id: int`                                                                                                 | `List[Stack]`      |
+| `list_cards`              | `board_id: int, stack_id: int`                                                                                  | `List[Card]`       | <!-- extracts from stacks endpoint; no dedicated cards-list API exists (decision 014) -->                    |
+| `create_card`             | `board_id: int, stack_id: int, title: str, description: str = ""`                                               | `Card`             |
+| `get_card`                | `board_id: int, stack_id: int, card_id: int`                                                                    | `Card`             |
+| `update_card`             | `board_id: int, stack_id: int, card_id: int, title?, description?, duedate?, done?, card_type?, owner?, order?` | `Card`             | <!-- decision 016: exhaustive fetch-merge; done/order added; card_type default changed to None -->           |
+| `move_card`               | `board_id: int, card_id: int, target_stack_name: str`                                                           | `Card`             |
+| `archive_card`            | `board_id: int, stack_id: int, card_id: int`                                                                    | `Card`             |
+| `assign_label_to_card`    | `board_id: int, stack_id: int, card_id: int, label_id: int`                                                     | `Dict`             |
+| `remove_label_from_card`  | `board_id: int, stack_id: int, card_id: int, label_id: int`                                                     | `Dict`             |
+| `assign_user_to_card`     | `board_id: int, stack_id: int, card_id: int, user_id: str`                                                      | `Dict`             |
+| `unassign_user_from_card` | `board_id: int, stack_id: int, card_id: int, user_id: str`                                                      | `Dict`             |
+| `get_assigned_cards`      | `user_id?: str, board_ids?: list[int], done?: bool`                                                             | `List[CardResult]` | <!-- decision 015; done is a filter predicate (truthy match on card.done datetime), not a value to write --> |
 
 ## Nextcloud Deck API
 
@@ -82,11 +83,10 @@ class DeckConfig:
     nc_user: str          # Required.
     nc_app_password: str  # Required.
     nc_api_version: str   # Default "v1.1"
-    transport: str        # "stdio" | "sse". Default "stdio".
     request_timeout: float  # Default 30.0 seconds.
 ```
 
-Loaded from environment variables: `NC_URL`, `NC_USER`, `NC_APP_PASSWORD`, `NC_API_VERSION`, `MCP_TRANSPORT`, `MCP_REQUEST_TIMEOUT`.
+Loaded from environment variables: `NC_URL`, `NC_USER`, `NC_APP_PASSWORD`, `NC_API_VERSION`, `MCP_REQUEST_TIMEOUT`.
 Validated at startup in the lifespan hook — raises `ValueError` immediately if required vars are missing.
 
 ## Module Dependency Graph

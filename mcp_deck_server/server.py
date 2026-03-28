@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Annotated, Any
 
 import httpx
 from mcp.server.fastmcp import FastMCP
+from pydantic import Field
 
 from .client import make_nc_request
 from .config import DeckConfig, load_config
@@ -78,6 +79,11 @@ def _card_matches_done_filter(card: Card, done: bool | None) -> bool:
 
 @mcp.tool()
 async def list_boards() -> list[Board]:
+    """List all boards the authenticated user can access.
+
+    Returns board metadata including IDs and labels. Use this to discover board
+    IDs before calling board-specific tools.
+    """
     runtime = get_runtime()
     response = await make_nc_request(runtime.client, runtime.config, "GET", "/boards")
     return [Board.model_validate(board) for board in response]
@@ -85,6 +91,10 @@ async def list_boards() -> list[Board]:
 
 @mcp.tool()
 async def get_board(board_id: int) -> Board:
+    """Get full details for a single board, including labels and ACL data.
+
+    Use this to look up label IDs before calling assign_label_to_card.
+    """
     runtime = get_runtime()
     response = await make_nc_request(
         runtime.client,
@@ -97,6 +107,11 @@ async def get_board(board_id: int) -> Board:
 
 @mcp.tool()
 async def list_stacks(board_id: int) -> list[Stack]:
+    """List all stacks on a board.
+
+    Returns stack IDs, titles, and order. Prefer get_assigned_cards if you need
+    cards for a specific user across boards.
+    """
     runtime = get_runtime()
     response = await make_nc_request(
         runtime.client,
@@ -109,8 +124,11 @@ async def list_stacks(board_id: int) -> list[Stack]:
 
 @mcp.tool()
 async def list_cards(board_id: int, stack_id: int) -> list[Card]:
-    """List cards in a stack. Extracts cards from the stacks endpoint
-    (no dedicated list-cards endpoint exists in the Deck API)."""
+    """List all cards in a specific stack.
+
+    Returns cards with titles, labels, assignees, and status. Prefer
+    get_assigned_cards to find a user's cards across boards.
+    """
     runtime = get_runtime()
     stacks_data = await make_nc_request(
         runtime.client,
@@ -127,10 +145,37 @@ async def list_cards(board_id: int, stack_id: int) -> list[Card]:
 
 @mcp.tool()
 async def get_assigned_cards(
-    user_id: str | None = None,
-    board_ids: list[int] | None = None,
-    done: bool | None = None,
+    user_id: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Nextcloud user ID. Defaults to the authenticated user if omitted."
+            )
+        ),
+    ] = None,
+    board_ids: Annotated[
+        list[int] | None,
+        Field(
+            description=(
+                "Restrict search to these board IDs. Omit to search all "
+                "accessible boards."
+            )
+        ),
+    ] = None,
+    done: Annotated[
+        bool | None,
+        Field(
+            description=(
+                "Filter: True=only done cards, False=only open cards, None=all."
+            )
+        ),
+    ] = None,
 ) -> list[CardResult]:
+    """Find cards assigned to a user across boards.
+
+    Filters by user, board, and done status, and returns board and stack context
+    with each card. Prefer this over list_stacks plus manual filtering.
+    """
     runtime = get_runtime()
     resolved_user_id = user_id or runtime.config.nc_user
 
@@ -182,8 +227,15 @@ async def create_card(
     board_id: int,
     stack_id: int,
     title: str,
-    description: str = "",
+    description: Annotated[
+        str,
+        Field(description="Card description. Defaults to empty."),
+    ] = "",
 ) -> Card:
+    """Create a new card in a stack.
+
+    Returns the created card.
+    """
     runtime = get_runtime()
     payload = {
         "title": title,
@@ -202,6 +254,10 @@ async def create_card(
 
 @mcp.tool()
 async def get_card(board_id: int, stack_id: int, card_id: int) -> Card:
+    """Get full details for a single card.
+
+    Returns the card with description, labels, assignees, and status fields.
+    """
     runtime = get_runtime()
     response = await make_nc_request(
         runtime.client,
@@ -217,14 +273,43 @@ async def update_card(
     board_id: int,
     stack_id: int,
     card_id: int,
-    title: str | None = None,
-    description: str | None = None,
-    duedate: str | None = None,
-    done: str | None = None,
+    title: Annotated[
+        str | None,
+        Field(description="New title. None to keep current."),
+    ] = None,
+    description: Annotated[
+        str | None,
+        Field(description="New description text, '' to clear, None to keep current."),
+    ] = None,
+    duedate: Annotated[
+        str | None,
+        Field(
+            description=("ISO-8601 datetime string, '' to clear, None to keep current.")
+        ),
+    ] = None,
+    done: Annotated[
+        str | None,
+        Field(
+            description=(
+                "ISO-8601 datetime string to mark done, '' to clear, None to keep "
+                "current. Never send a boolean."
+            )
+        ),
+    ] = None,
     card_type: str | None = None,
     owner: dict[str, Any] | None = None,
-    order: int | None = None,
+    order: Annotated[
+        int | None,
+        Field(description="Sort position within the stack. None to keep current."),
+    ] = None,
 ) -> Card:
+    """Update card fields without resetting omitted values.
+
+    The current card is fetched first and only provided fields are changed. For
+    text fields, None keeps the current value and an empty string clears it.
+    For duedate and done, use None to keep, an empty string to clear, or an
+    ISO-8601 datetime string to set a new value.
+    """
     runtime = get_runtime()
     current_card_data = await make_nc_request(
         runtime.client,
@@ -274,7 +359,19 @@ async def update_card(
 
 
 @mcp.tool()
-async def move_card(board_id: int, card_id: int, target_stack_name: str) -> Card:
+async def move_card(
+    board_id: int,
+    card_id: int,
+    target_stack_name: Annotated[
+        str,
+        Field(description="Name of the destination stack. Case-insensitive."),
+    ],
+) -> Card:
+    """Move a card to a different stack on the same board.
+
+    Stack name matching is case-insensitive. If no stack matches, the error
+    lists the available stack names.
+    """
     runtime = get_runtime()
     stacks_data = await make_nc_request(
         runtime.client,
@@ -343,6 +440,10 @@ async def move_card(board_id: int, card_id: int, target_stack_name: str) -> Card
 
 @mcp.tool()
 async def archive_card(board_id: int, stack_id: int, card_id: int) -> Card:
+    """Archive a card.
+
+    Archived cards are removed from the active board view.
+    """
     runtime = get_runtime()
     response = await make_nc_request(
         runtime.client,
@@ -360,6 +461,7 @@ async def remove_label_from_card(
     card_id: int,
     label_id: int,
 ) -> dict[str, Any]:
+    """Remove a label from a card."""
     runtime = get_runtime()
     payload = {"labelId": label_id}
     result = await make_nc_request(
@@ -381,8 +483,15 @@ async def assign_label_to_card(
     board_id: int,
     stack_id: int,
     card_id: int,
-    label_id: int,
+    label_id: Annotated[
+        int,
+        Field(description="Label ID from the board's labels list (see get_board)."),
+    ],
 ) -> dict[str, Any]:
+    """Add a label to a card.
+
+    Get available label IDs from get_board first.
+    """
     runtime = get_runtime()
     payload = {"labelId": label_id}
     result = await make_nc_request(
@@ -404,8 +513,12 @@ async def assign_user_to_card(
     board_id: int,
     stack_id: int,
     card_id: int,
-    user_id: str,
+    user_id: Annotated[
+        str,
+        Field(description="Nextcloud user ID of the user to assign."),
+    ],
 ) -> dict[str, Any]:
+    """Assign a user to a card by Nextcloud user ID."""
     runtime = get_runtime()
     payload = {"userId": user_id}
     result = await make_nc_request(
@@ -429,6 +542,7 @@ async def unassign_user_from_card(
     card_id: int,
     user_id: str,
 ) -> dict[str, Any]:
+    """Remove a user assignment from a card."""
     runtime = get_runtime()
     payload = {"userId": user_id}
     result = await make_nc_request(
