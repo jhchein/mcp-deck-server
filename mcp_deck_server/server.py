@@ -166,7 +166,7 @@ async def get_assigned_cards(
         bool | None,
         Field(
             description=(
-                "Filter: True=only done cards, False=only open cards, " "None=all."
+                "Filter: True=only done cards, False=only open cards, None=all."
             )
         ),
     ] = None,
