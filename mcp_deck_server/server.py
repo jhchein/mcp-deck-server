@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Annotated, Any
 
 import httpx
@@ -51,6 +52,18 @@ def _resolve_datetime_field(value: str | None, current: str | None) -> str | Non
         return current
     if value == "":
         return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as error:
+        raise ValueError(
+            "Datetime fields must be ISO-8601 timestamps like "
+            "'2026-04-02T00:00:00+00:00'; use '' to clear or None to keep current."
+        ) from error
+    if parsed.tzinfo is None:
+        raise ValueError(
+            "Datetime fields must be ISO-8601 timestamps like "
+            "'2026-04-02T00:00:00+00:00'; use '' to clear or None to keep current."
+        )
     return value
 
 
