@@ -624,7 +624,11 @@ async def test_update_card_rejects_non_timestamp_datetime_fields(
 
         with pytest.raises(
             ValueError,
-            match=r"Datetime fields must be ISO-8601 timestamps like '2026-04-02T00:00:00\+00:00'; use '' to clear or None to keep current\.",
+            match=(
+                r"Datetime fields must be ISO-8601 timestamps like "
+                r"'2026-04-02T00:00:00\+00:00'; use '' to clear or None "
+                r"to keep current\."
+            ),
         ):
             await server.update_card(10, 4, 81, **{field_name: field_value})
 
