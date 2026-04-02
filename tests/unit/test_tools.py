@@ -596,6 +596,43 @@ async def test_update_card_preserves_done_datetime_when_omitted(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("field_name", "field_value"),
+    [
+        ("done", "true"),
+        ("done", "2026-04-02"),
+        ("done", "2026-04-02T12:00:00"),
+        ("duedate", "not-a-date"),
+    ],
+)
+async def test_update_card_rejects_non_timestamp_datetime_fields(
+    patched_runtime: None,
+    runtime: DeckRuntime,
+    field_name: str,
+    field_value: str,
+) -> None:
+    with respx.mock(assert_all_called=False) as router:
+        get_route = router.route(
+            method="GET",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/4/cards/81",
+        ).mock(return_value=httpx.Response(200, json=load_fixture("card.json")))
+
+        put_route = router.route(
+            method="PUT",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/4/cards/81",
+        ).mock(return_value=httpx.Response(200, json=load_fixture("card.json")))
+
+        with pytest.raises(
+            ValueError,
+            match=r"Datetime fields must be ISO-8601 timestamps like '2026-04-02T00:00:00\+00:00'; use '' to clear or None to keep current\.",
+        ):
+            await server.update_card(10, 4, 81, **{field_name: field_value})
+
+    assert get_route.called
+    assert not put_route.called
+
+
+@pytest.mark.asyncio
 async def test_remove_label_from_card_with_no_content_returns_success(
     patched_runtime: None, runtime: DeckRuntime
 ) -> None:
