@@ -78,7 +78,7 @@ Add to your MCP client config (e.g., Claude Desktop `claude_desktop_config.json`
 
 ## Project Structure
 
-```
+```text
 main.py                     # Entrypoint: imports and runs the FastMCP server (stdio)
 mcp_deck_server/
     __init__.py              # Re-exports mcp instance
@@ -95,7 +95,7 @@ project-spec/               # Canonical spec: constraints, interfaces, decisions
 
 Module dependency graph:
 
-```
+```text
 config.py  ←──  client.py  ←──  server.py  ←──  main.py
 models.py  ←──  server.py
 ```

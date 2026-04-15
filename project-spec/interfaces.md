@@ -66,7 +66,7 @@ class CardResult(DeckBaseModel):
 
 All exceptions live in `client.py`.
 
-```
+```text
 DeckAPIError(Exception)           # Base — all Deck API errors
 ├── DeckHTTPError(DeckAPIError)   # HTTP status errors (has .status_code, .body)
 └── DeckConnectionError(DeckAPIError)  # Network / timeout errors
@@ -93,7 +93,7 @@ Validated at startup in the lifespan hook — raises `ValueError` immediately if
 
 All modules live in `mcp_deck_server/` (flat at repo root, not `src/` layout).
 
-```
+```text
 config.py  ←──  client.py  ←──  server.py  ←──  main.py
 models.py  ←──  server.py
 ```
