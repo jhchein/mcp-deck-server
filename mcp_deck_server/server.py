@@ -136,7 +136,18 @@ async def list_stacks(board_id: int) -> list[Stack]:
 
 
 @mcp.tool()
-async def list_cards(board_id: int, stack_id: int) -> list[Card]:
+async def list_cards(
+    board_id: int,
+    stack_id: int,
+    done: Annotated[
+        bool | None,
+        Field(
+            description=(
+                "Filter: True=only done cards, False=only open cards, None=all."
+            )
+        ),
+    ] = None,
+) -> list[Card]:
     """List all cards in a specific stack.
 
     Returns cards with titles, labels, assignees, and status. Prefer
@@ -152,7 +163,11 @@ async def list_cards(board_id: int, stack_id: int) -> list[Card]:
     for stack_data in stacks_data:
         stack = Stack.model_validate(stack_data)
         if stack.id == stack_id:
-            return stack.cards or []
+            return [
+                card
+                for card in stack.cards or []
+                if _card_matches_done_filter(card, done)
+            ]
     raise ValueError(f"Stack {stack_id} not found on board {board_id}")
 
 

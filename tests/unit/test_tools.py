@@ -78,6 +78,77 @@ async def test_list_cards(patched_runtime: None, runtime: DeckRuntime) -> None:
 
 
 @pytest.mark.asyncio
+async def test_list_cards_filters_open_cards_by_done_status(
+    patched_runtime: None, runtime: DeckRuntime
+) -> None:
+    stacks_payload = json.loads(json.dumps(load_fixture("stacks_list.json")))
+    done_card = json.loads(json.dumps(load_fixture("card_done.json")))
+    assert isinstance(done_card, dict)
+    done_card["id"] = 82
+    done_card["title"] = "Task B"
+    stacks_payload[0]["cards"] = [stacks_payload[0]["cards"][0], done_card]
+
+    with respx.mock(assert_all_called=True) as router:
+        route = router.route(
+            method="GET",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks",
+        ).mock(return_value=httpx.Response(200, json=stacks_payload))
+        cards = await server.list_cards(10, 4, done=False)
+
+    assert route.called
+    assert len(cards) == 1
+    assert cards[0].id == 81
+    assert cards[0].done is None
+
+
+@pytest.mark.asyncio
+async def test_list_cards_filters_done_cards_by_done_status(
+    patched_runtime: None, runtime: DeckRuntime
+) -> None:
+    stacks_payload = json.loads(json.dumps(load_fixture("stacks_list.json")))
+    done_card = json.loads(json.dumps(load_fixture("card_done.json")))
+    assert isinstance(done_card, dict)
+    done_card["id"] = 82
+    done_card["title"] = "Task B"
+    stacks_payload[0]["cards"] = [stacks_payload[0]["cards"][0], done_card]
+
+    with respx.mock(assert_all_called=True) as router:
+        route = router.route(
+            method="GET",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks",
+        ).mock(return_value=httpx.Response(200, json=stacks_payload))
+        cards = await server.list_cards(10, 4, done=True)
+
+    assert route.called
+    assert len(cards) == 1
+    assert cards[0].id == 82
+    assert cards[0].done == "2026-03-28T12:00:00+00:00"
+
+
+@pytest.mark.asyncio
+async def test_list_cards_returns_all_cards_when_done_filter_is_none(
+    patched_runtime: None, runtime: DeckRuntime
+) -> None:
+    stacks_payload = json.loads(json.dumps(load_fixture("stacks_list.json")))
+    done_card = json.loads(json.dumps(load_fixture("card_done.json")))
+    assert isinstance(done_card, dict)
+    done_card["id"] = 82
+    done_card["title"] = "Task B"
+    stacks_payload[0]["cards"] = [stacks_payload[0]["cards"][0], done_card]
+
+    with respx.mock(assert_all_called=True) as router:
+        route = router.route(
+            method="GET",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks",
+        ).mock(return_value=httpx.Response(200, json=stacks_payload))
+        cards = await server.list_cards(10, 4, done=None)
+
+    assert route.called
+    assert len(cards) == 2
+    assert [card.id for card in cards] == [81, 82]
+
+
+@pytest.mark.asyncio
 async def test_list_cards_stack_not_found(
     patched_runtime: None, runtime: DeckRuntime
 ) -> None:

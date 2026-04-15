@@ -14,7 +14,7 @@ Tool docstrings and `Annotated[..., Field(description=...)]` parameter hints are
 | `list_boards`             | —                                                                                                               | `List[Board]`      |
 | `get_board`               | `board_id: int`                                                                                                 | `Board`            |
 | `list_stacks`             | `board_id: int`                                                                                                 | `List[Stack]`      |
-| `list_cards`              | `board_id: int, stack_id: int`                                                                                  | `List[Card]`       | <!-- extracts from stacks endpoint; no dedicated cards-list API exists (decision 014) -->                    |
+| `list_cards`              | `board_id: int, stack_id: int, done?: bool`                                                                     | `List[Card]`       | <!-- extracts from stacks endpoint; no dedicated cards-list API exists (decision 014); done filter matches get_assigned_cards semantics --> |
 | `create_card`             | `board_id: int, stack_id: int, title: str, description: str = ""`                                               | `Card`             |
 | `get_card`                | `board_id: int, stack_id: int, card_id: int`                                                                    | `Card`             |
 | `update_card`             | `board_id: int, stack_id: int, card_id: int, title?, description?, duedate?, done?, card_type?, owner?, order?` | `Card`             | <!-- decision 016: exhaustive fetch-merge; done/order added; card_type default changed to None -->           |

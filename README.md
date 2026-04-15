@@ -60,7 +60,7 @@ Add to your MCP client config (e.g., Claude Desktop `claude_desktop_config.json`
 | `list_boards`             | —                                                                                                | `List[Board]`      |
 | `get_board`               | `board_id`                                                                                       | `Board`            |
 | `list_stacks`             | `board_id`                                                                                       | `List[Stack]`      |
-| `list_cards`              | `board_id, stack_id`                                                                             | `List[Card]`       |
+| `list_cards`              | `board_id, stack_id, done?`                                                                      | `List[Card]`       |
 | `get_assigned_cards`      | `user_id?, board_ids?, done?`                                                                    | `List[CardResult]` |
 | `create_card`             | `board_id, stack_id, title, description?`                                                        | `Card`             |
 | `get_card`                | `board_id, stack_id, card_id`                                                                    | `Card`             |
