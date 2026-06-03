@@ -331,7 +331,7 @@ async def test_move_card_uses_embedded_cards_and_reorder(
 
         reorder_route = router.route(
             method="PUT",
-            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/4/cards/81/reorder",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/5/cards/81/reorder",
         ).mock(
             return_value=httpx.Response(
                 200, json=load_fixture("card_reorder_response.json")
@@ -393,7 +393,7 @@ async def test_move_card_empty_list_reorder_response_raises_value_error(
 
         route = router.route(
             method="PUT",
-            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/4/cards/81/reorder",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/5/cards/81/reorder",
         ).mock(return_value=httpx.Response(200, json=[]))
 
         with pytest.raises(ValueError, match="Empty list response"):
@@ -437,7 +437,7 @@ async def test_move_card_finds_correct_card_in_reorder_list(
 ) -> None:
     """Reorder returns all affected cards; move_card must find ours by ID."""
     other_card = {"id": 999, "title": "Other", "stackId": 5, "type": "plain"}
-    our_card = load_fixture("card.json")  # id=81
+    our_card = load_fixture("card_reorder_response.json")  # id=81, stackId=5
     reorder_payload = [other_card, our_card]
 
     with respx.mock(assert_all_called=True) as router:
@@ -448,7 +448,7 @@ async def test_move_card_finds_correct_card_in_reorder_list(
 
         router.route(
             method="PUT",
-            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/4/cards/81/reorder",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/5/cards/81/reorder",
         ).mock(return_value=httpx.Response(200, json=reorder_payload))
 
         card = await server.move_card(10, 81, "Done")
@@ -472,17 +472,79 @@ async def test_move_card_fetches_card_when_not_in_reorder_list(
 
         router.route(
             method="PUT",
-            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/4/cards/81/reorder",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/5/cards/81/reorder",
         ).mock(return_value=httpx.Response(200, json=reorder_payload))
 
         router.route(
             method="GET",
             url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/5/cards/81",
-        ).mock(return_value=httpx.Response(200, json=load_fixture("card.json")))
+        ).mock(
+            return_value=httpx.Response(
+                200, json=load_fixture("card_reorder_response.json")
+            )
+        )
 
         card = await server.move_card(10, 81, "Done")
 
     assert card.id == 81
+    assert card.stackId == 5
+
+
+@pytest.mark.asyncio
+async def test_move_card_fetches_from_target_stack_when_reorder_response_is_stale(
+    patched_runtime: None, runtime: DeckRuntime
+) -> None:
+    with respx.mock(assert_all_called=True) as router:
+        router.route(
+            method="GET",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks",
+        ).mock(return_value=httpx.Response(200, json=load_fixture("stacks_list.json")))
+
+        router.route(
+            method="PUT",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/5/cards/81/reorder",
+        ).mock(return_value=httpx.Response(200, json=load_fixture("card.json")))
+
+        refresh_route = router.route(
+            method="GET",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/5/cards/81",
+        ).mock(
+            return_value=httpx.Response(
+                200, json=load_fixture("card_reorder_response.json")
+            )
+        )
+
+        card = await server.move_card(10, 81, "Done")
+
+    assert refresh_route.called
+    assert card.id == 81
+    assert card.stackId == 5
+
+
+@pytest.mark.asyncio
+async def test_move_card_stale_reorder_response_raises_when_target_fetch_404(
+    patched_runtime: None, runtime: DeckRuntime
+) -> None:
+    with respx.mock(assert_all_called=True) as router:
+        router.route(
+            method="GET",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks",
+        ).mock(return_value=httpx.Response(200, json=load_fixture("stacks_list.json")))
+
+        router.route(
+            method="PUT",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/5/cards/81/reorder",
+        ).mock(return_value=httpx.Response(200, json=load_fixture("card.json")))
+
+        refresh_route = router.route(
+            method="GET",
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/5/cards/81",
+        ).mock(return_value=httpx.Response(404, json=load_fixture("error_404.json")))
+
+        with pytest.raises(ValueError, match="could not be verified in target stack 5"):
+            await server.move_card(10, 81, "Done")
+
+    assert refresh_route.called
 
 
 @pytest.mark.asyncio
@@ -874,8 +936,12 @@ async def test_move_card_non_list_reorder_response_returns_card(
 
         router.route(
             method="PUT",
-            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/4/cards/81/reorder",
-        ).mock(return_value=httpx.Response(200, json=load_fixture("card.json")))
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/5/cards/81/reorder",
+        ).mock(
+            return_value=httpx.Response(
+                200, json=load_fixture("card_reorder_response.json")
+            )
+        )
 
         card = await server.move_card(10, 81, "Done")
 

@@ -39,6 +39,8 @@ Tool docstrings and `Annotated[..., Field(description=...)]` parameter hints are
 - ETags supported on GET endpoints (`If-None-Match` → 304)
 - `archive_card` endpoint is **undocumented** — works empirically, no official alternative (decision 013)
 - `owner` field in PUT card payload is **undocumented but required** — server returns 400 without it (decisions 013, 016)
+- `move_card` reorder must use the target stack ID in the URL and payload: `PUT /boards/{boardId}/stacks/{targetStackId}/cards/{cardId}/reorder` with `stackId=targetStackId` (decision 014)
+- `move_card` must only return success after verifying the moved card's `stackId` is the target stack ID; stale reorder responses are refreshed from the target stack (decision 014)
 
 ## Models — `Assignment`, `CardResult` (decision 015), `Card.done` narrowing (decision 016)
 

@@ -46,9 +46,18 @@ Live `archive_card` response returned `"lastEditor": "nc_agent"` (a plain string
 
 **Decision:** Widen `Card.lastEditor` to `Owner | str | None`.
 
-## Finding 4: `move_card` reorder returns the first card from the affected list
+## Finding 4: `move_card` reorder has target-stack URL and response verification requirements
 
-The `PUT .../cards/{cardId}/reorder` endpoint returns a list of all affected cards in the target stack. Our `move_card` implementation takes `response[0]`, which may not be the card that was moved. This is a pre-existing known behavior, not a regression.
+The `PUT .../cards/{cardId}/reorder` endpoint returns a list of all affected cards in the target stack. Our earlier `move_card` implementation took `response[0]`, which may not be the card that was moved. This is a pre-existing known behavior, not a regression.
+
+Live validation also showed that moving a card between stacks requires the target stack ID in both the URL and payload:
+
+```text
+PUT /boards/{boardId}/stacks/{targetStackId}/cards/{cardId}/reorder
+{ "stackId": targetStackId, "order": ... }
+```
+
+Using the current stack ID in the URL can return a card-like success response without moving the card. The tool must verify that the moved card's returned `stackId` is the target stack ID. If the reorder response is missing the moved card or returns it with a stale `stackId`, fetch the card from the target stack and fail if that postcondition cannot be verified.
 
 ## Consequences
 
@@ -57,5 +66,6 @@ The `PUT .../cards/{cardId}/reorder` endpoint returns a list of all affected car
 - Unit test `test_board_settings_list_is_rejected` replaced with `test_board_settings_list_is_accepted`
 - `list_cards` tool rewritten to use stacks endpoint
 - `list_cards` unit tests updated accordingly
+- `move_card` uses the target stack ID in the reorder URL and verifies the moved card's target-stack postcondition
 - Live contract integration test covers all 13 tool endpoints in one round-trip
 - Decision 013 model observations table corrected
