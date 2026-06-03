@@ -9,7 +9,7 @@ import httpx
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
-from .client import make_nc_request
+from .client import DeckHTTPError, make_nc_request
 from .config import DeckConfig, load_config
 from .models import Board, Card, CardResult, Owner, Stack
 
@@ -444,9 +444,33 @@ async def move_card(
         runtime.client,
         runtime.config,
         "PUT",
-        f"/boards/{board_id}/stacks/{current_stack_id}/cards/{card_id}/reorder",
+        f"/boards/{board_id}/stacks/{target_stack_id}/cards/{card_id}/reorder",
         json=payload,
     )
+
+    async def fetch_from_target_stack() -> Card:
+        try:
+            refreshed = await make_nc_request(
+                runtime.client,
+                runtime.config,
+                "GET",
+                f"/boards/{board_id}/stacks/{target_stack_id}/cards/{card_id}",
+            )
+        except DeckHTTPError as error:
+            raise ValueError(
+                f"Card {card_id} could not be verified in target stack "
+                f"{target_stack_id} after reorder"
+            ) from error
+
+        refreshed_card = Card.model_validate(refreshed)
+        if refreshed_card.id != card_id or refreshed_card.stackId != target_stack_id:
+            raise ValueError(
+                f"Card {card_id} was not moved to stack {target_stack_id}; "
+                f"refreshed card id={refreshed_card.id}, "
+                f"stackId={refreshed_card.stackId}"
+            )
+        return refreshed_card
+
     if isinstance(response, list):
         if not response:
             raise ValueError("Empty list response from card reorder endpoint")
@@ -454,16 +478,16 @@ async def move_card(
         for item in response:
             validated = Card.model_validate(item)
             if validated.id == card_id:
+                if validated.stackId != target_stack_id:
+                    return await fetch_from_target_stack()
                 return validated
         # Card not in response list — fetch it directly.
-        refreshed = await make_nc_request(
-            runtime.client,
-            runtime.config,
-            "GET",
-            f"/boards/{board_id}/stacks/{target_stack_id}/cards/{card_id}",
-        )
-        return Card.model_validate(refreshed)
-    return Card.model_validate(response)
+        return await fetch_from_target_stack()
+
+    validated_response = Card.model_validate(response)
+    if validated_response.stackId != target_stack_id:
+        return await fetch_from_target_stack()
+    return validated_response
 
 
 @mcp.tool()

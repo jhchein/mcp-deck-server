@@ -66,8 +66,12 @@ async def test_move_card_makes_two_api_calls(
 
         reorder_route = router.route(
             method="PUT",
-            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/4/cards/81/reorder",
-        ).mock(return_value=httpx.Response(200, json=load_fixture("card.json")))
+            url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks/5/cards/81/reorder",
+        ).mock(
+            return_value=httpx.Response(
+                200, json=load_fixture("card_reorder_response.json")
+            )
+        )
 
         card = await server.move_card(10, 81, "Done")
 
