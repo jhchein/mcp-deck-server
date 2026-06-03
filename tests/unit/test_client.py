@@ -76,6 +76,30 @@ async def test_make_nc_request_connection_error(
 
 
 @pytest.mark.asyncio
+async def test_make_nc_request_connection_error_redacts_request_details(
+    test_client: httpx.AsyncClient, test_config
+) -> None:
+    def raise_connect_error(request: httpx.Request) -> None:
+        raise httpx.ConnectError(
+            "failed to connect to https://nextcloud.example.test/private",
+            request=request,
+        )
+
+    with respx.mock(assert_all_called=True) as router:
+        router.route(
+            method="GET",
+            url=f"{test_config.nc_url}/index.php/apps/deck/api/{test_config.nc_api_version}/boards",
+        ).mock(side_effect=raise_connect_error)
+
+        with pytest.raises(DeckConnectionError) as error:
+            await make_nc_request(test_client, test_config, "GET", "/boards")
+
+    assert str(error.value) == "Deck API connection error"
+    assert test_config.nc_url not in str(error.value)
+    assert "/private" not in str(error.value)
+
+
+@pytest.mark.asyncio
 async def test_make_nc_request_malformed_json_raises_value_error(
     test_client: httpx.AsyncClient, test_config
 ) -> None:

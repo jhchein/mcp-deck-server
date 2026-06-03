@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import os
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -26,6 +27,11 @@ def load_config() -> DeckConfig:
 
     if not nc_url:
         raise ValueError("NC_URL is required")
+    parsed_nc_url = urlparse(nc_url)
+    if parsed_nc_url.scheme not in {"http", "https"} or not parsed_nc_url.netloc:
+        raise ValueError("NC_URL must be an absolute HTTP(S) URL")
+    if parsed_nc_url.query or parsed_nc_url.fragment:
+        raise ValueError("NC_URL must not include query or fragment")
     if not nc_user:
         raise ValueError("NC_USER is required")
     if not nc_app_password:

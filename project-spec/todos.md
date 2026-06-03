@@ -58,14 +58,17 @@ Remaining:
 
 ## Phase 4: Security review (decision 010)
 
-- [ ] Review credential handling (load, storage, leak vectors)
-- [ ] Review input validation (URL interpolation, SSRF risk)
-- [ ] Review local stdio trust boundary and process-level exposure surface
-- [ ] Audit dependencies for known CVEs (`uv audit` or equivalent)
-- [ ] Review error information leakage to MCP clients
-- [ ] Investigate Nextcloud app password scope
-- [ ] Write `docs/security.md` with findings and recommendations
-- [ ] File remediation items as P0/P1 todos
+- [x] Review credential handling (load, storage, leak vectors)
+- [x] Review input validation (URL interpolation, SSRF risk)
+- [x] Review local stdio trust boundary and process-level exposure surface
+- [x] Audit dependencies for known CVEs (`uv audit` or equivalent)
+- [x] Review error information leakage to MCP clients
+- [x] Investigate Nextcloud app password scope
+- [x] Write `docs/security.md` with findings and recommendations
+- [x] File remediation items as P0/P1 todos
+- [x] P1: Validate `NC_URL` at config load as an absolute HTTP(S) URL; reject query and fragment components
+- [x] P2: Redact `DeckConnectionError` messages before exposing them to MCP clients
+- [x] P2: Document dedicated low-privilege Nextcloud user setup guidance
 
 ## Phase 5: Performance review (decision 011)
 
