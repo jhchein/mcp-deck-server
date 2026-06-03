@@ -1,17 +1,25 @@
 # mcp-deck-server
 
-MCP tool server that lets AI agents manage Nextcloud Deck kanban boards.
+A local MCP server for Nextcloud Deck. It lets an agent list boards, inspect stacks, create and update cards, move cards between stacks, and manage labels or assignees through the Deck API.
 
-## Prerequisites
+The server is intentionally local: it runs over stdio and does not expose an HTTP listener.
+
+## What you need
+
+You need Python, uv, and a Nextcloud account that can access the Deck boards the agent should manage. Use a dedicated low-privilege Nextcloud user when you can. Nextcloud app passwords are account credentials, not Deck-only tokens.
 
 - Python 3.13+
-- [uv](https://docs.astral.sh/uv/) package manager
-- A Nextcloud instance with the [Deck app](https://apps.nextcloud.com/apps/deck) installed
-- A Nextcloud app password (Settings → Security → Devices & sessions)
+- [uv](https://docs.astral.sh/uv/)
+- Nextcloud with the [Deck app](https://apps.nextcloud.com/apps/deck)
+- A Nextcloud app password from Settings > Security > Devices & sessions
 
-## Configuration
+## Quick start
 
-Create a `.env` file in the project root:
+Install dependencies, create a `.env`, then run the server.
+
+```bash
+uv sync
+```
 
 ```env
 NC_URL=https://your-nextcloud-instance.example.com
@@ -19,27 +27,33 @@ NC_USER=your-agents-username
 NC_APP_PASSWORD=your-app-password
 ```
 
-| Variable              | Required | Default | Description                            |
-| --------------------- | -------- | ------- | -------------------------------------- |
-| `NC_URL`              | Yes      | —       | Nextcloud base URL (no trailing slash) |
-| `NC_USER`             | Yes      | —       | Nextcloud username                     |
-| `NC_APP_PASSWORD`     | Yes      | —       | Nextcloud app password                 |
-| `NC_API_VERSION`      | No       | `v1.1`  | Deck API version                       |
-| `MCP_REQUEST_TIMEOUT` | No       | `30.0`  | HTTP request timeout in seconds        |
-
-Configuration is validated at startup. Missing required variables cause an immediate `ValueError`.
-
-## Running
-
 ```bash
 uv run main.py
 ```
 
-The server uses stdio transport exclusively, intended for local MCP clients (Claude Desktop, VS Code, etc.).
+Configuration is validated at startup. Missing required values, invalid URLs, and invalid timeout values fail before the MCP server starts.
 
-### MCP Client Configuration
+## Configuration
 
-Add to your MCP client config (e.g., Claude Desktop `claude_desktop_config.json` or VS Code `settings.json`):
+The `.env` file lives in the project root. Keep it out of source control.
+
+| Variable | Required | Default | Notes |
+| --- | --- | --- | --- |
+| `NC_URL` | Yes | None | Absolute `http` or `https` Nextcloud base URL. No query string or fragment. |
+| `NC_USER` | Yes | None | Nextcloud user ID for the MCP server. |
+| `NC_APP_PASSWORD` | Yes | None | Device-specific app password for `NC_USER`. |
+| `NC_API_VERSION` | No | `v1.1` | Deck API version. |
+| `MCP_REQUEST_TIMEOUT` | No | `30.0` | HTTP request timeout in seconds. |
+
+For live integration and performance checks, add this only when you have a board that can safely receive disposable test cards:
+
+```env
+DECK_TEST_BOARD_ID=6
+```
+
+## MCP client config
+
+Point your MCP client at `uv run main.py` from this repository. Example shape:
 
 ```json
 {
@@ -53,111 +67,107 @@ Add to your MCP client config (e.g., Claude Desktop `claude_desktop_config.json`
 }
 ```
 
+Use the Windows path style in `cwd` when configuring a Windows client.
+
 ## Tools
 
-| Tool                      | Parameters                                                                                       | Returns            |
-| ------------------------- | ------------------------------------------------------------------------------------------------ | ------------------ |
-| `list_boards`             | —                                                                                                | `List[Board]`      |
-| `get_board`               | `board_id`                                                                                       | `Board`            |
-| `list_stacks`             | `board_id`                                                                                       | `List[Stack]`      |
-| `list_cards`              | `board_id, stack_id, done?`                                                                      | `List[Card]`       |
-| `get_assigned_cards`      | `user_id?, board_ids?, done?`                                                                    | `List[CardResult]` |
-| `create_card`             | `board_id, stack_id, title, description?`                                                        | `Card`             |
-| `get_card`                | `board_id, stack_id, card_id`                                                                    | `Card`             |
-| `update_card`             | `board_id, stack_id, card_id, title?, description?, duedate?, done?, card_type?, owner?, order?` | `Card`             |
-| `move_card`               | `board_id, card_id, target_stack_name`                                                           | `Card`             |
-| `archive_card`            | `board_id, stack_id, card_id`                                                                    | `Card`             |
-| `assign_label_to_card`    | `board_id, stack_id, card_id, label_id`                                                          | `Dict`             |
-| `remove_label_from_card`  | `board_id, stack_id, card_id, label_id`                                                          | `Dict`             |
-| `assign_user_to_card`     | `board_id, stack_id, card_id, user_id`                                                           | `Dict`             |
-| `unassign_user_from_card` | `board_id, stack_id, card_id, user_id`                                                           | `Dict`             |
+The tool names are small on purpose. IDs come from Deck, so start with `list_boards` and `list_stacks` when you are exploring a board for the first time.
 
-`update_card` uses a fetch-merge pattern: it GETs the current card, merges provided fields, and PUTs the full payload. `None` = keep current value, `""` = clear. The `done` field accepts an ISO-8601 datetime string or `""` to clear — never a boolean.
+| Tool | Parameters | Returns |
+| --- | --- | --- |
+| `list_boards` | None | `list[Board]` |
+| `get_board` | `board_id` | `Board` |
+| `list_stacks` | `board_id` | `list[Stack]` |
+| `list_cards` | `board_id`, `stack_id`, `done?` | `list[Card]` |
+| `get_assigned_cards` | `user_id?`, `board_ids?`, `done?` | `list[CardResult]` |
+| `create_card` | `board_id`, `stack_id`, `title`, `description?` | `Card` |
+| `get_card` | `board_id`, `stack_id`, `card_id` | `Card` |
+| `update_card` | `board_id`, `stack_id`, `card_id`, optional card fields | `Card` |
+| `move_card` | `board_id`, `card_id`, `target_stack_name` | `Card` |
+| `archive_card` | `board_id`, `stack_id`, `card_id` | `Card` |
+| `assign_label_to_card` | `board_id`, `stack_id`, `card_id`, `label_id` | `dict` |
+| `remove_label_from_card` | `board_id`, `stack_id`, `card_id`, `label_id` | `dict` |
+| `assign_user_to_card` | `board_id`, `stack_id`, `card_id`, `user_id` | `dict` |
+| `unassign_user_from_card` | `board_id`, `stack_id`, `card_id`, `user_id` | `dict` |
 
-`move_card` resolves `target_stack_name` case-insensitively. On mismatch, the error includes available stack names.
+Two tools have behavior worth calling out.
 
-## Project Structure
+`update_card` fetches the current card, merges the fields you provide, and sends the full Deck payload back. For text and datetime fields, `None` means keep the current value. For nullable text and datetime fields, `""` means clear the value. `done` is an ISO-8601 datetime string or `""`, never a boolean.
+
+`move_card` resolves `target_stack_name` case-insensitively, uses the target-stack reorder endpoint, and verifies the card actually ended up in the target stack. If the stack name is wrong, the error includes the available stack names.
+
+## Project layout
+
+The implementation is deliberately flat. `server.py` owns the MCP tools, `client.py` owns HTTP behavior, `models.py` owns response shapes, and `config.py` owns environment parsing.
 
 ```text
-main.py                     # Entrypoint: imports and runs the FastMCP server (stdio)
+main.py
 mcp_deck_server/
-    __init__.py              # Re-exports mcp instance
-    config.py                # DeckConfig dataclass + env-var loader
-    models.py                # Pydantic models (Board, Stack, Card, Owner, Label, etc.)
-    client.py                # make_nc_request + exception hierarchy
-    server.py                # FastMCP instance, lifespan hook, tool registrations
+    __init__.py
+    client.py
+    config.py
+    models.py
+    server.py
 tests/
-    unit/                    # Unit tests (respx-mocked)
-    integration/             # Live Nextcloud integration tests (secrets-gated)
-    fixtures/                # Captured API response fixtures
-project-spec/               # Canonical spec: constraints, interfaces, decisions
+    fixtures/
+    integration/
+    unit/
+project-spec/
+    decisions/
+docs/
+    performance.md
+    security.md
 ```
 
-Module dependency graph:
+Dependency direction stays simple:
 
 ```text
-config.py  ←──  client.py  ←──  server.py  ←──  main.py
-models.py  ←──  server.py
+config.py <- client.py <- server.py <- main.py
+models.py <- server.py
 ```
-
-`config.py` and `models.py` are leaf modules with no intra-project imports.
 
 ## Development
 
-Install dev dependencies:
+Use uv for local work.
 
 ```bash
-uv sync --group dev
+uv sync --dev
 ```
 
-### Linting & Type Checking
+Run the normal checks before opening a PR:
 
 ```bash
 uv run ruff check .
+uv run ruff format --check .
 uv run pyright
+uv run pytest tests/unit tests/test_timing.py -m "not integration"
+uv audit
 ```
 
-### Tests
+Live tests need a configured `.env`. The mutation performance test also needs `DECK_TEST_BOARD_ID`, because it creates, moves, and archives a disposable card.
 
 ```bash
-uv run pytest                          # unit tests
-uv run pytest --cov --cov-report=term-missing  # with coverage
-uv run pytest -m integration           # integration tests (requires live Nextcloud + env vars)
+uv run pytest tests/integration -m integration
+uv run pytest tests/integration/test_live_performance.py -s -m "integration and slow"
 ```
 
-### CI
+## CI and branch protection
 
-GitHub Actions workflow (`.github/workflows/ci.yml`) runs:
+CI runs lint, unit tests with coverage, audit, and optional live jobs. `integration` and `benchmarks` are intentionally not required on PRs because they need secrets or a live Nextcloud instance.
 
-- **lint** — ruff + pyright
-- **test** — pytest unit + coverage (80% gate)
-- **integration** — optional, secrets-gated, on `main` or manual trigger
-- **benchmarks** — informational, non-blocking, `main`/manual only
-- **audit** — `uv audit`
-
-### Branch Protection
-
-Recommended settings for the `main` branch:
-
-- Require a pull request before merging
-- Require at least 1 approving review
-- Dismiss stale approvals when new commits are pushed
-- Require conversation resolution before merge (optional, but recommended)
-- Require branches to be up to date before merging
-
-Required status checks (must match job names in `.github/workflows/ci.yml`):
+Required checks for `main` should be:
 
 - `lint`
 - `test`
 - `audit`
 
-Checks that should **not** be required:
+Keep `integration` and `benchmarks` informational.
 
-- `integration` (main/manual + secrets-gated)
-- `benchmarks` (informational, non-blocking)
+## Current reviews
 
-## Security
+The current security and performance positions are documented separately:
 
-- Secrets (`NC_URL`, `NC_USER`, `NC_APP_PASSWORD`) are loaded from `.env` and never logged or embedded in responses.
-- Board/card content may contain personal data — request/response payloads are not logged.
-- The server runs locally over stdio; there is no network-facing attack surface.
+- [docs/security.md](docs/security.md)
+- [docs/performance.md](docs/performance.md)
+
+Short version: the local stdio deployment is acceptable for a trusted local MCP client, and current performance is fast enough for normal single-user MCP use. The broad unscoped assigned-card scan is the path to watch if the account gains access to many boards.
