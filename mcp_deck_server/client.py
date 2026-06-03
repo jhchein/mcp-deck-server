@@ -38,7 +38,7 @@ async def make_nc_request(
     except httpx.HTTPStatusError as error:
         raise DeckHTTPError(error.response.status_code, error.response.text) from error
     except (httpx.TimeoutException, httpx.RequestError) as error:
-        raise DeckConnectionError(str(error)) from error
+        raise DeckConnectionError("Deck API connection error") from error
 
     if response.status_code == 204:
         return None
