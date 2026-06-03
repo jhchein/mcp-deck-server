@@ -72,14 +72,14 @@ Remaining:
 
 ## Phase 5: Performance review (decision 011)
 
-- [ ] Measure connection overhead: per-request vs shared client
-- [ ] Measure `move_card` N+1 vs stacks-response optimization
-- [ ] Measure Pydantic `model_validate` cost for large payloads
-- [ ] Assess timeout behavior under slow Nextcloud responses
-- [ ] Test concurrent tool call behavior
-- [ ] Evaluate caching potential (ETags, short-lived caches)
-- [ ] Write `docs/performance.md` with findings and recommendations
-- [ ] Use simple `time.perf_counter` timing (from `tests/test_timing.py`), not `pytest-benchmark`
+- [x] Measure connection overhead: per-request vs shared client
+- [x] Measure `move_card` N+1 vs stacks-response optimization
+- [x] Measure Pydantic `model_validate` cost for large payloads
+- [x] Assess timeout behavior under slow Nextcloud responses
+- [x] Test concurrent tool call behavior
+- [x] Evaluate caching potential (ETags, short-lived caches)
+- [x] Write `docs/performance.md` with findings and recommendations
+- [x] Use simple `time.perf_counter` timing (from `tests/test_timing.py`), not `pytest-benchmark`
 
 ## Phase 6: Documentation (decision 009)
 
@@ -95,7 +95,7 @@ Remaining:
 - [ ] Evaluate typed response models for `assign_label_to_card` / `remove_label_from_card` / user assignment tools
 - [ ] Add `pre-commit` hooks for local dev experience
 - [ ] Static site generator for docs (if project grows)
-- [ ] Evaluate ETag caching for GET endpoints (Phase 5 finding)
+- [ ] Consider conditional ETag revalidation for `list_boards` only if repeated broad scans become a real bottleneck (Phase 5 finding)
 - [ ] Comments API support (OCS base URL, pagination — currently a non-goal)
 - [ ] Attachment management (multipart upload — currently a non-goal)
 - [ ] Board/Stack/Label CRUD tools (currently a non-goal)
