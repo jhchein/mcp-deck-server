@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from contextlib import asynccontextmanager, suppress
@@ -15,7 +16,16 @@ from pydantic import Field
 
 from .client import DeckHTTPError, make_nc_request
 from .config import DeckConfig, load_config
-from .models import AssignedCards, Board, Card, CardResult, Owner, SkippedBoard, Stack
+from .models import (
+    AssignedCards,
+    Board,
+    Card,
+    CardResult,
+    CardSummary,
+    Owner,
+    SkippedBoard,
+    Stack,
+)
 
 # Boards the user cannot read or that no longer exist should not abort a
 # cross-board search.
@@ -26,6 +36,14 @@ _SKIPPABLE_BOARD_STATUS_CODES = frozenset({403, 404})
 MAX_TITLE_LENGTH = 255
 MAX_DESCRIPTION_LENGTH = 100_000
 
+# Upper bound on simultaneous Deck requests during a cross-board search.
+MAX_CONCURRENT_BOARD_REQUESTS = 5
+
+_COMPACT_DESCRIPTION = (
+    "Return slim card summaries (id, title, stackId, duedate, done, archived, "
+    "label titles, assignee user IDs) instead of full cards. Use get_card for "
+    "the description and other details."
+)
 F = TypeVar("F", bound=Callable[..., Any])
 
 logger = logging.getLogger(__name__)
@@ -147,6 +165,23 @@ def _card_is_assigned_to_user(card: Card, user_id: str) -> bool:
     return False
 
 
+def _summarize_card(card: Card) -> CardSummary:
+    return CardSummary(
+        id=card.id,
+        title=card.title,
+        stackId=card.stackId,
+        duedate=card.duedate,
+        done=card.done,
+        archived=bool(card.archived),
+        labels=[label.title for label in card.labels or [] if label.title],
+        assignees=[
+            assignment.participant.uid
+            for assignment in card.assignedUsers or []
+            if assignment.participant is not None and assignment.participant.uid
+        ],
+    )
+
+
 def _card_matches_done_filter(card: Card, done: bool | None) -> bool:
     if done is None:
         return True
@@ -211,7 +246,8 @@ async def list_cards(
             )
         ),
     ] = None,
-) -> list[Card]:
+    compact: Annotated[bool, Field(description=_COMPACT_DESCRIPTION)] = False,
+) -> list[Card] | list[CardSummary]:
     """List all cards in a specific stack.
 
     Returns cards with titles, labels, assignees, and status. Prefer
@@ -227,12 +263,59 @@ async def list_cards(
     for stack_data in stacks_data:
         stack = Stack.model_validate(stack_data)
         if stack.id == stack_id:
-            return [
+            cards = [
                 card
                 for card in stack.cards or []
                 if _card_matches_done_filter(card, done)
             ]
+            return [_summarize_card(card) for card in cards] if compact else cards
     raise ValueError(f"Stack {stack_id} not found on board {board_id}")
+
+
+async def _collect_board_cards(
+    runtime: DeckRuntime,
+    semaphore: asyncio.Semaphore,
+    board_id: int,
+    board_title: str,
+    user_id: str,
+    done: bool | None,
+    compact: bool,
+) -> tuple[list[CardResult], SkippedBoard | None]:
+    """Fetch one board's stacks and return the cards assigned to the user."""
+    async with semaphore:
+        try:
+            stacks_response = await make_nc_request(
+                runtime.client,
+                runtime.config,
+                "GET",
+                f"/boards/{board_id}/stacks",
+            )
+        except DeckHTTPError as error:
+            if error.status_code not in _SKIPPABLE_BOARD_STATUS_CODES:
+                raise
+            reason = f"HTTP {error.status_code}"
+            return [], SkippedBoard(board_id=board_id, reason=reason)
+
+    results: list[CardResult] = []
+    for stack_data in stacks_response:
+        stack = Stack.model_validate(stack_data)
+        if stack.id is None:
+            continue
+        for card in stack.cards or []:
+            if not _card_is_assigned_to_user(card, user_id):
+                continue
+            if not _card_matches_done_filter(card, done):
+                continue
+            results.append(
+                CardResult(
+                    board_id=board_id,
+                    board_title=board_title,
+                    stack_id=stack.id,
+                    stack_title=stack.title or "",
+                    card=_summarize_card(card) if compact else card,
+                )
+            )
+    return results, None
 
 
 @mcp.tool(annotations=_READ_ONLY)
@@ -262,13 +345,14 @@ async def get_assigned_cards(
             )
         ),
     ] = None,
+    compact: Annotated[bool, Field(description=_COMPACT_DESCRIPTION)] = False,
 ) -> AssignedCards:
     """Find cards assigned to a user across boards.
 
     Filters by user, board, and done status, and returns board and stack context
-    with each card. Boards that answer 403 or 404 are listed in skipped_boards
-    instead of failing the whole search. Prefer this over list_stacks plus
-    manual filtering.
+    with each card. Boards are fetched concurrently. Boards that answer 403 or
+    404 are listed in skipped_boards instead of failing the whole search. Prefer
+    this over list_stacks plus manual filtering.
     """
     runtime = get_runtime()
     resolved_user_id = user_id or runtime.config.nc_user
@@ -287,44 +371,30 @@ async def get_assigned_cards(
             (board.id, board.title or "") for board in boards if board.id is not None
         ]
 
-    results: list[CardResult] = []
-    skipped: list[SkippedBoard] = []
-    for board_id, board_title in boards_to_query:
-        try:
-            stacks_response = await make_nc_request(
-                runtime.client,
-                runtime.config,
-                "GET",
-                f"/boards/{board_id}/stacks",
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_BOARD_REQUESTS)
+    tasks = [
+        asyncio.create_task(
+            _collect_board_cards(
+                runtime,
+                semaphore,
+                board_id,
+                board_title,
+                resolved_user_id,
+                done,
+                compact,
             )
-        except DeckHTTPError as error:
-            if error.status_code not in _SKIPPABLE_BOARD_STATUS_CODES:
-                raise
-            skipped.append(
-                SkippedBoard(
-                    board_id=board_id,
-                    reason=f"HTTP {error.status_code}",
-                )
-            )
-            continue
-        stacks = [Stack.model_validate(stack_data) for stack_data in stacks_response]
-        for stack in stacks:
-            if stack.id is None:
-                continue
-            for card in stack.cards or []:
-                if not _card_is_assigned_to_user(card, resolved_user_id):
-                    continue
-                if not _card_matches_done_filter(card, done):
-                    continue
-                results.append(
-                    CardResult(
-                        board_id=board_id,
-                        board_title=board_title,
-                        stack_id=stack.id,
-                        stack_title=stack.title or "",
-                        card=card,
-                    )
-                )
+        )
+        for board_id, board_title in boards_to_query
+    ]
+    try:
+        outcomes = await asyncio.gather(*tasks)
+    except BaseException:
+        for task in tasks:
+            task.cancel()
+        raise
+
+    results = [card for cards, _ in outcomes for card in cards]
+    skipped = [board for _, board in outcomes if board is not None]
     return AssignedCards(cards=results, skipped_boards=skipped)
 
 

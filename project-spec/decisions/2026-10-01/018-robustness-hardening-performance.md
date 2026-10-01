@@ -10,7 +10,7 @@ An implementation review of the server found no blocking defects, but three gaps
 
 1. **Errors are opaque.** `DeckHTTPError` carried the response body as an attribute, but FastMCP surfaces only `str(error)`, so the agent saw `Deck API HTTP error 400` without Deck's reason (for example `title must be provided`) and could not self-correct. Transient failures (429, 502-504, connect timeouts) failed the whole tool call, and a 200 response with a non-JSON body raised a bare `JSONDecodeError`.
 2. **Writes are unrestricted.** A Nextcloud app password is an account credential (`docs/security.md`). Card titles and descriptions are untrusted text that the agent reads and then acts on, so prompt injection can reach every write tool. Tools carry no MCP annotations, and `http://` URLs send Basic auth in clear text.
-3. **Avoidable cost.** `list_cards` downloads every stack of a board to read one. `get_assigned_cards` scans boards sequentially. Both tools return full 23-field cards, which burns agent context.
+3. **Avoidable cost.** `get_assigned_cards` scans boards sequentially. Both tools return full 23-field cards, which burns agent context.
 
 Latency itself is acceptable (`docs/performance.md`), so the order of work is robustness, then hardening, then performance.
 
@@ -37,12 +37,12 @@ Latency itself is acceptable (`docs/performance.md`), so the order of work is ro
 
 ### Phase 3 — Performance and ergonomics
 
-- `list_cards` uses `GET /boards/{board}/stacks/{stack}` instead of loading all stacks.
-- `get_assigned_cards` fetches boards concurrently, bounded by a semaphore.
+- `get_assigned_cards` fetches boards concurrently, bounded by a semaphore of 5.
 - `list_cards` and `get_assigned_cards` accept `compact=true` and then return `CardSummary` objects with the fields an agent normally needs.
 
 ## Rejected alternatives
 
+- **`list_cards` via `GET /boards/{board}/stacks/{stack}`.** The initial review proposed this to avoid downloading every stack. A live check against a Nextcloud instance showed the single-stack endpoint returns degraded cards: `labels` is `null` and `owner` is a plain string instead of an object, while the stack list returns both. Switching would silently drop labels, so `list_cards` keeps reading the stack list.
 - **Retry writes with idempotency keys.** Deck has no idempotency support, so a retry could create duplicate cards.
 - **Response caching.** Stacks expose no ETag and Deck sends `no-store`, so cached data would risk stale agent output (decision 011).
 - **Tool allowlist environment variable.** Read-only mode covers the real risk with less configuration. An allowlist can follow if users ask.

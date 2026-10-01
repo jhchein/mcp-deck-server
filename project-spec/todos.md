@@ -167,4 +167,5 @@ PR 2 — security hardening:
 
 PR 3 — performance and ergonomics:
 
-- [ ] `list_cards` via the stack endpoint, concurrent `get_assigned_cards`, `compact` output
+- [x] Concurrent `get_assigned_cards` (semaphore of 5) and `compact` output
+- [x] Dropped: `list_cards` via the single-stack endpoint — it returns `labels: null` and a string `owner` (decision 018)
