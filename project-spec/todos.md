@@ -169,3 +169,24 @@ PR 3 — performance and ergonomics:
 
 - [x] Concurrent `get_assigned_cards` (semaphore of 5) and `compact` output
 - [x] Dropped: `list_cards` via the single-stack endpoint — it returns `labels: null` and a string `owner` (decision 018)
+
+## Phase 9: Resilience, token cost and operations (decision 019)
+
+PR 1 — resilience and security:
+
+- [x] Overall tool deadline (`MCP_TOOL_TIMEOUT`), separate connect timeout, jittered backoff, `Retry-After` dates
+- [x] Actionable 401 and connection errors; `main.py --check`
+- [x] `MCP_ENABLED_TOOLS` allowlist; threat model and dedicated-user guidance in `docs/security.md`
+
+PR 2 — token cost:
+
+- [ ] Drop output schemas (`structured_output=False`); `get_assigned_cards` `limit` and `truncated`
+
+PR 3 — CI and operations:
+
+- [ ] Pin Actions, `permissions`, `--locked`, path-aware audit gate, weekly run, Dependabot groups
+- [ ] Entry point, structured logging, stdio protocol test, `SECURITY.md`
+
+PR 4 — code structure:
+
+- [ ] `DeckRuntime.request()`, shared result helper, `card_type` validation, optional module split

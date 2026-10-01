@@ -45,7 +45,7 @@ Latency itself is acceptable (`docs/performance.md`), so the order of work is ro
 - **`list_cards` via `GET /boards/{board}/stacks/{stack}`.** The initial review proposed this to avoid downloading every stack. A live check against a Nextcloud instance showed the single-stack endpoint returns degraded cards: `labels` is `null` and `owner` is a plain string instead of an object, while the stack list returns both. Switching would silently drop labels, so `list_cards` keeps reading the stack list.
 - **Retry writes with idempotency keys.** Deck has no idempotency support, so a retry could create duplicate cards.
 - **Response caching.** Stacks expose no ETag and Deck sends `no-store`, so cached data would risk stale agent output (decision 011).
-- **Tool allowlist environment variable.** Read-only mode covers the real risk with less configuration. An allowlist can follow if users ask.
+- **Tool allowlist environment variable.** Read-only mode covers the real risk with less configuration. An allowlist can follow if users ask. (Added in decision 019.)
 - **Optimistic locking in `update_card`.** Re-checking `lastModified` before the PUT narrows the race but cannot close it, and adds a request to every update.
 - **Restricting the `owner` argument of `update_card`.** The owner payload shape is undocumented (decisions 013 and 016), so a stricter schema would guess at it.
 - **New feature tools (comments, upcoming cards, unarchive).** Deferred. They need their own decisions, especially comments, which use the OCS base URL and pagination.

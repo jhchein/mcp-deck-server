@@ -123,6 +123,7 @@ async def test_default_lifespan_keeps_write_tools(
     monkeypatch.setenv("NC_USER", "alice")
     monkeypatch.setenv("NC_APP_PASSWORD", "secret")
     monkeypatch.delenv("MCP_READ_ONLY", raising=False)
+    monkeypatch.delenv("MCP_ENABLED_TOOLS", raising=False)
 
     async with server.deck_lifespan(server.mcp):
         names = {tool.name for tool in await server.mcp.list_tools()}

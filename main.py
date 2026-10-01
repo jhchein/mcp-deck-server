@@ -1,4 +1,4 @@
-from mcp_deck_server import mcp
+from mcp_deck_server.cli import main
 
 if __name__ == "__main__":
-    mcp.run(transport="stdio")
+    raise SystemExit(main())

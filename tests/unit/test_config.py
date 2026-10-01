@@ -27,6 +27,8 @@ def test_load_config_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("NC_API_VERSION", raising=False)
     monkeypatch.delenv("MCP_REQUEST_TIMEOUT", raising=False)
     monkeypatch.delenv("MCP_MAX_RETRIES", raising=False)
+    monkeypatch.delenv("MCP_TOOL_TIMEOUT", raising=False)
+    monkeypatch.delenv("MCP_ENABLED_TOOLS", raising=False)
 
     config = load_config()
     field_names = {field.name for field in dataclasses.fields(config)}
@@ -41,10 +43,14 @@ def test_load_config_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
         "request_timeout",
         "max_retries",
         "read_only",
+        "tool_timeout",
+        "enabled_tools",
     }
     assert config.request_timeout == 30.0
     assert config.max_retries == 2
     assert config.read_only is False
+    assert config.tool_timeout == 120.0
+    assert config.enabled_tools is None
 
 
 def test_load_config_rejects_non_http_url(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -212,3 +218,39 @@ def test_load_config_rejects_unparseable_read_only(
 
     with pytest.raises(ValueError, match="MCP_READ_ONLY"):
         load_config()
+
+
+@pytest.mark.parametrize("raw_value", ["abc", "0", "-1"])
+def test_load_config_rejects_invalid_tool_timeout(
+    monkeypatch: pytest.MonkeyPatch, raw_value: str
+) -> None:
+    _set_required_env(monkeypatch, "https://nextcloud.example.test")
+    monkeypatch.setenv("MCP_TOOL_TIMEOUT", raw_value)
+
+    with pytest.raises(ValueError, match="MCP_TOOL_TIMEOUT"):
+        load_config()
+
+
+def test_load_config_parses_tool_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_required_env(monkeypatch, "https://nextcloud.example.test")
+    monkeypatch.setenv("MCP_TOOL_TIMEOUT", "45.5")
+
+    assert load_config().tool_timeout == 45.5
+
+
+@pytest.mark.parametrize(
+    ("raw_value", "expected"),
+    [
+        ("", None),
+        (" , ", None),
+        ("list_boards", frozenset({"list_boards"})),
+        (" list_boards, get_card ,list_boards", frozenset({"list_boards", "get_card"})),
+    ],
+)
+def test_load_config_parses_enabled_tools(
+    monkeypatch: pytest.MonkeyPatch, raw_value: str, expected: frozenset[str] | None
+) -> None:
+    _set_required_env(monkeypatch, "https://nextcloud.example.test")
+    monkeypatch.setenv("MCP_ENABLED_TOOLS", raw_value)
+
+    assert load_config().enabled_tools == expected

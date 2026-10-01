@@ -33,6 +33,12 @@ uv run main.py
 
 Configuration is validated at startup. Missing required values, invalid URLs, and invalid timeout values fail before the MCP server starts.
 
+To verify the setup before wiring it into a client, run the check. It validates the configuration, calls the Deck API once, and exits with code 0 on success:
+
+```bash
+uv run main.py --check
+```
+
 ## Configuration
 
 The `.env` file lives in the project root. Keep it out of source control.
@@ -43,7 +49,9 @@ The `.env` file lives in the project root. Keep it out of source control.
 | `NC_USER` | Yes | None | Nextcloud user ID for the MCP server. |
 | `NC_APP_PASSWORD` | Yes | None | Device-specific app password for `NC_USER`. |
 | `NC_API_VERSION` | No | `v1.1` | Deck API version, in the form `v1` or `v1.1`. |
-| `MCP_REQUEST_TIMEOUT` | No | `30.0` | HTTP request timeout in seconds. |
+| `MCP_REQUEST_TIMEOUT` | No | `30.0` | Timeout of a single HTTP request in seconds. Connecting to the host is capped at 10 seconds. |
+| `MCP_TOOL_TIMEOUT` | No | `120.0` | Overall deadline in seconds for one tool call, retries and parallel board requests included. |
+| `MCP_ENABLED_TOOLS` | No | all tools | Comma-separated tool names. Only these tools are offered; unknown names fail at startup. See [Limiting tools](#limiting-tools). |
 | `MCP_READ_ONLY` | No | `false` | When `true`, write tools are removed from the tool list and refused if called. |
 | `NC_ALLOW_INSECURE_HTTP` | No | `false` | Allows plain `http` for a non-local `NC_URL`. Credentials then travel unencrypted. |
 | `MCP_MAX_RETRIES` | No | `2` | Retries for transient `GET` failures (HTTP 429/502/503/504, connection errors), 0-5. Writes are never retried. |
@@ -59,6 +67,16 @@ DECK_TEST_BOARD_ID=6
 Set `MCP_READ_ONLY=true` to give the agent a read-only view. The write tools (`create_card`, `update_card`, `move_card`, `archive_card`, and the label and assignee tools) disappear from the tool list, and each one also refuses to run if a client calls it anyway. Restart the MCP server after changing the setting. This is the strongest control against prompt injection from card text, because a Nextcloud app password cannot be limited to Deck.
 
 Every tool also carries MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`) so clients can ask for confirmation before risky calls. Write tools log one audit line to stderr with the tool name and IDs, never card content.
+
+## Limiting tools
+
+`MCP_ENABLED_TOOLS` offers the agent only the tools you list, for example:
+
+```env
+MCP_ENABLED_TOOLS=list_boards,get_board,list_stacks,get_assigned_cards,get_card,create_card,move_card
+```
+
+Everything else is removed from the tool list and refused if called. It is off by default, so all tools stay available unless you opt in. Combined with `MCP_READ_ONLY=true`, read-only wins: write tools stay disabled even when listed. `uv run main.py --check` prints which tools are disabled.
 
 ## MCP client config
 

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import httpx
@@ -12,6 +15,7 @@ RETRYABLE_STATUS_CODES = frozenset({429, 502, 503, 504})
 RETRY_BASE_DELAY_SECONDS = 0.5
 RETRY_MAX_DELAY_SECONDS = 5.0
 MAX_ERROR_DETAIL_CHARS = 300
+AUTH_FAILURE_HINT = "check NC_USER and NC_APP_PASSWORD"
 
 
 class DeckAPIError(Exception):
@@ -49,6 +53,8 @@ class DeckHTTPError(DeckAPIError):
         detail = _extract_error_detail(body)
         if detail:
             message = f"{message}: {detail}"
+        if status_code == 401:
+            message = f"{message} ({AUTH_FAILURE_HINT})"
         super().__init__(message)
 
 
@@ -61,12 +67,42 @@ class DeckResponseError(DeckAPIError):
     """The Deck API answered successfully but with an unusable body."""
 
 
+class DeckTimeoutError(DeckAPIError):
+    """A tool call ran past its overall deadline (MCP_TOOL_TIMEOUT)."""
+
+
+def _connection_message(error: httpx.RequestError) -> str:
+    # The exception class (ConnectTimeout, ConnectError, ...) helps diagnosis;
+    # its text can embed URLs, so it is not echoed.
+    return f"Deck API connection error ({type(error).__name__})"
+
+
+def _parse_retry_after(value: str) -> float | None:
+    """Return the wait in seconds from a Retry-After header (seconds or date)."""
+    value = value.strip()
+    if value.isdigit():
+        return float(value)
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if when.tzinfo is None:
+        return None
+    return max(0.0, (when - datetime.now(UTC)).total_seconds())
+
+
 def _retry_delay(attempt: int, response: httpx.Response | None) -> float:
+    """Wait before the next attempt: Retry-After if sent, else jittered backoff.
+
+    Jitter keeps the concurrent board requests of one search from retrying in
+    lockstep against a server that is already struggling.
+    """
     if response is not None:
-        retry_after = response.headers.get("Retry-After", "").strip()
-        if retry_after.isdigit():
-            return min(float(retry_after), RETRY_MAX_DELAY_SECONDS)
-    return min(RETRY_BASE_DELAY_SECONDS * 2**attempt, RETRY_MAX_DELAY_SECONDS)
+        retry_after = _parse_retry_after(response.headers.get("Retry-After", ""))
+        if retry_after is not None:
+            return min(retry_after, RETRY_MAX_DELAY_SECONDS)
+    backoff = min(RETRY_BASE_DELAY_SECONDS * 2**attempt, RETRY_MAX_DELAY_SECONDS)
+    return backoff * random.uniform(0.5, 1.0)
 
 
 async def _send_with_retries(
@@ -85,11 +121,11 @@ async def _send_with_retries(
             response = await client.request(method, url, **kwargs)
         except httpx.TransportError as error:
             if is_last_attempt:
-                raise DeckConnectionError("Deck API connection error") from error
+                raise DeckConnectionError(_connection_message(error)) from error
             await asyncio.sleep(_retry_delay(attempt, None))
             continue
         except httpx.RequestError as error:
-            raise DeckConnectionError("Deck API connection error") from error
+            raise DeckConnectionError(_connection_message(error)) from error
 
         if response.status_code in RETRYABLE_STATUS_CODES and not is_last_attempt:
             await asyncio.sleep(_retry_delay(attempt, response))
