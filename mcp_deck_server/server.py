@@ -78,6 +78,12 @@ class DeckRuntime:
     config: DeckConfig
     client: httpx.AsyncClient
 
+    async def request(self, method: str, endpoint: str, **kwargs: Any) -> Any:
+        """Call the Deck API with this runtime's client and configuration."""
+        return await make_nc_request(
+            self.client, self.config, method, endpoint, **kwargs
+        )
+
 
 def create_http_client(config: DeckConfig) -> httpx.AsyncClient:
     return httpx.AsyncClient(
@@ -242,6 +248,30 @@ def _resolve_datetime_field(value: str | None, current: str | None) -> str | Non
     return value
 
 
+def _resolve_owner(
+    owner: dict[str, Any] | None, current: Card, fallback: str
+) -> dict[str, Any] | str:
+    """Return the owner to send. Deck requires one, so keep the current owner.
+
+    An explicit owner wins. Without one, the fetched card's owner is preserved,
+    and the configured user is the last resort for a card that has none.
+    """
+    if owner is not None:
+        return owner
+    if isinstance(current.owner, Owner):
+        return current.owner.model_dump(exclude_none=True)
+    return current.owner if current.owner is not None else fallback
+
+
+def _mutation_result(result: Any) -> dict[str, Any]:
+    """Normalise the body of a label or assignment call, which may be empty."""
+    if result is None:
+        return {"success": True}
+    if not isinstance(result, dict):
+        return {"success": True, "raw": result}
+    return result
+
+
 def get_runtime() -> DeckRuntime:
     context = mcp.get_context()
     runtime = context.request_context.lifespan_context
@@ -290,7 +320,7 @@ async def list_boards() -> list[Board]:
     IDs before calling board-specific tools.
     """
     runtime = get_runtime()
-    response = await make_nc_request(runtime.client, runtime.config, "GET", "/boards")
+    response = await runtime.request("GET", "/boards")
     return [Board.model_validate(board) for board in response]
 
 
@@ -301,9 +331,7 @@ async def get_board(board_id: int) -> Board:
     Use this to look up label IDs before calling assign_label_to_card.
     """
     runtime = get_runtime()
-    response = await make_nc_request(
-        runtime.client,
-        runtime.config,
+    response = await runtime.request(
         "GET",
         f"/boards/{board_id}",
     )
@@ -318,9 +346,7 @@ async def list_stacks(board_id: int) -> list[Stack]:
     cards for a specific user across boards.
     """
     runtime = get_runtime()
-    response = await make_nc_request(
-        runtime.client,
-        runtime.config,
+    response = await runtime.request(
         "GET",
         f"/boards/{board_id}/stacks",
     )
@@ -347,9 +373,7 @@ async def list_cards(
     get_assigned_cards to find a user's cards across boards.
     """
     runtime = get_runtime()
-    stacks_data = await make_nc_request(
-        runtime.client,
-        runtime.config,
+    stacks_data = await runtime.request(
         "GET",
         f"/boards/{board_id}/stacks",
     )
@@ -377,9 +401,7 @@ async def _collect_board_cards(
     """Fetch one board's stacks and return the cards assigned to the user."""
     async with semaphore:
         try:
-            stacks_response = await make_nc_request(
-                runtime.client,
-                runtime.config,
+            stacks_response = await runtime.request(
                 "GET",
                 f"/boards/{board_id}/stacks",
             )
@@ -465,9 +487,7 @@ async def get_assigned_cards(
     if board_ids:
         boards_to_query = [(board_id, "") for board_id in board_ids]
     else:
-        boards_response = await make_nc_request(
-            runtime.client,
-            runtime.config,
+        boards_response = await runtime.request(
             "GET",
             "/boards",
         )
@@ -532,9 +552,7 @@ async def create_card(
         "description": description,
         "type": "plain",
     }
-    response = await make_nc_request(
-        runtime.client,
-        runtime.config,
+    response = await runtime.request(
         "POST",
         f"/boards/{board_id}/stacks/{stack_id}/cards",
         json=payload,
@@ -549,9 +567,7 @@ async def get_card(board_id: int, stack_id: int, card_id: int) -> Card:
     Returns the card with description, labels, assignees, and status fields.
     """
     runtime = get_runtime()
-    response = await make_nc_request(
-        runtime.client,
-        runtime.config,
+    response = await runtime.request(
         "GET",
         f"/boards/{board_id}/stacks/{stack_id}/cards/{card_id}",
     )
@@ -612,9 +628,7 @@ async def update_card(
     _authorize_write(
         runtime, "update_card", board_id=board_id, stack_id=stack_id, card_id=card_id
     )
-    current_card_data = await make_nc_request(
-        runtime.client,
-        runtime.config,
+    current_card_data = await runtime.request(
         "GET",
         f"/boards/{board_id}/stacks/{stack_id}/cards/{card_id}",
     )
@@ -622,13 +636,6 @@ async def update_card(
 
     if title is None:
         title = current_card.title
-
-    owner_payload = owner
-    if owner_payload is None:
-        if isinstance(current_card.owner, Owner):
-            owner_payload = current_card.owner.model_dump(exclude_none=True)
-        else:
-            owner_payload = current_card.owner
 
     resolved_description = _resolve_text_field(description, current_card.description)
     resolved_duedate = _resolve_datetime_field(duedate, current_card.duedate)
@@ -645,15 +652,9 @@ async def update_card(
         "done": resolved_done,
     }
 
-    # If owner is omitted, preserve current owner from the fetched card.
-    if owner_payload is not None:
-        payload["owner"] = owner_payload
-    else:
-        payload["owner"] = runtime.config.nc_user
+    payload["owner"] = _resolve_owner(owner, current_card, runtime.config.nc_user)
 
-    response = await make_nc_request(
-        runtime.client,
-        runtime.config,
+    response = await runtime.request(
         "PUT",
         f"/boards/{board_id}/stacks/{stack_id}/cards/{card_id}",
         json=payload,
@@ -690,9 +691,7 @@ async def move_card(
 
     runtime = get_runtime()
     _authorize_write(runtime, "move_card", board_id=board_id, card_id=card_id)
-    stacks_data = await make_nc_request(
-        runtime.client,
-        runtime.config,
+    stacks_data = await runtime.request(
         "GET",
         f"/boards/{board_id}/stacks",
     )
@@ -751,9 +750,7 @@ async def move_card(
         "stackId": target_stack_id,
         "order": current_card_order if current_card_order is not None else 999,
     }
-    response = await make_nc_request(
-        runtime.client,
-        runtime.config,
+    response = await runtime.request(
         "PUT",
         f"/boards/{board_id}/stacks/{target_stack_id}/cards/{card_id}/reorder",
         json=payload,
@@ -761,9 +758,7 @@ async def move_card(
 
     async def fetch_from_target_stack() -> Card:
         try:
-            refreshed = await make_nc_request(
-                runtime.client,
-                runtime.config,
+            refreshed = await runtime.request(
                 "GET",
                 f"/boards/{board_id}/stacks/{target_stack_id}/cards/{card_id}",
             )
@@ -811,9 +806,7 @@ async def archive_card(board_id: int, stack_id: int, card_id: int) -> Card:
     _authorize_write(
         runtime, "archive_card", board_id=board_id, stack_id=stack_id, card_id=card_id
     )
-    response = await make_nc_request(
-        runtime.client,
-        runtime.config,
+    response = await runtime.request(
         "PUT",
         f"/boards/{board_id}/stacks/{stack_id}/cards/{card_id}/archive",
     )
@@ -838,18 +831,12 @@ async def remove_label_from_card(
         label_id=label_id,
     )
     payload = {"labelId": label_id}
-    result = await make_nc_request(
-        runtime.client,
-        runtime.config,
+    result = await runtime.request(
         "PUT",
         f"/boards/{board_id}/stacks/{stack_id}/cards/{card_id}/removeLabel",
         json=payload,
     )
-    if result is None:
-        return {"success": True}
-    if not isinstance(result, dict):
-        return {"success": True, "raw": result}
-    return result
+    return _mutation_result(result)
 
 
 @_write_tool(_ADDITIVE)
@@ -876,18 +863,12 @@ async def assign_label_to_card(
         label_id=label_id,
     )
     payload = {"labelId": label_id}
-    result = await make_nc_request(
-        runtime.client,
-        runtime.config,
+    result = await runtime.request(
         "PUT",
         f"/boards/{board_id}/stacks/{stack_id}/cards/{card_id}/assignLabel",
         json=payload,
     )
-    if result is None:
-        return {"success": True}
-    if not isinstance(result, dict):
-        return {"success": True, "raw": result}
-    return result
+    return _mutation_result(result)
 
 
 @_write_tool(_ADDITIVE)
@@ -911,18 +892,12 @@ async def assign_user_to_card(
         user_id=user_id,
     )
     payload = {"userId": user_id}
-    result = await make_nc_request(
-        runtime.client,
-        runtime.config,
+    result = await runtime.request(
         "PUT",
         f"/boards/{board_id}/stacks/{stack_id}/cards/{card_id}/assignUser",
         json=payload,
     )
-    if result is None:
-        return {"success": True}
-    if not isinstance(result, dict):
-        return {"success": True, "raw": result}
-    return result
+    return _mutation_result(result)
 
 
 @_write_tool(_DESTRUCTIVE)
@@ -943,15 +918,9 @@ async def unassign_user_from_card(
         user_id=user_id,
     )
     payload = {"userId": user_id}
-    result = await make_nc_request(
-        runtime.client,
-        runtime.config,
+    result = await runtime.request(
         "PUT",
         f"/boards/{board_id}/stacks/{stack_id}/cards/{card_id}/unassignUser",
         json=payload,
     )
-    if result is None:
-        return {"success": True}
-    if not isinstance(result, dict):
-        return {"success": True, "raw": result}
-    return result
+    return _mutation_result(result)

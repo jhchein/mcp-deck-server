@@ -189,4 +189,4 @@ PR 3 — CI and operations:
 
 PR 4 — code structure:
 
-- [ ] `DeckRuntime.request()`, shared result helper, `card_type` validation, optional module split
+- [x] `DeckRuntime.request()`, shared result helper, owner helper. Dropped: `card_type` validation and the module split (see decision 019)

@@ -44,9 +44,9 @@ A second review after decision 018 found the code sound but the operating model 
 
 ### Phase 4 — Code structure
 
-- `DeckRuntime.request()` replaces the 14-fold `make_nc_request(runtime.client, runtime.config, …)` call, and one helper replaces the three copies of the `success`/`raw` result handling.
-- `update_card`: `card_type` is validated against Deck's card types; the owner handling is simplified.
-- `server.py` is split along its seams if the split reduces coupling without changing the public module surface that tests and `__init__` use.
+- `DeckRuntime.request()` replaces the repeated `make_nc_request(runtime.client, runtime.config, …)` call, and one helper replaces the four copies of the `success`/`raw` result handling.
+- `update_card`: the owner handling moves into a small tested helper. Behaviour is unchanged.
+- `server.py` stays one module. A split would put the runtime and tool registration in a module that every tool module imports, and the unit tests patch `server.get_runtime`, so every test module would have to change for a purely structural gain. Revisit when the file keeps growing.
 
 ## Rejected alternatives
 
@@ -56,6 +56,7 @@ A second review after decision 018 found the code sound but the operating model 
 - **Circuit breaker.** One user and one server. The overall deadline and bounded retries give the same protection with less state.
 - **Per-tool timeouts.** One deadline is easier to reason about; the slow tool is `get_assigned_cards`, and it is the one that benefits.
 - **Making `audit` non-required.** That would let a vulnerable lock file reach `main` unnoticed. The path-aware gate keeps the check meaningful.
+- **Validating `card_type` and `owner` in `update_card`.** Deck documents `plain` as the only card type "for now" and does not document the owner payload (decisions 013 and 016). A strict schema would guess and could reject values Deck accepts.
 - **Choosing a licence.** That is the repository owner's decision and is not made here.
 
 ## Consequences
