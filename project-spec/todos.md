@@ -180,7 +180,7 @@ PR 1 — resilience and security:
 
 PR 2 — token cost:
 
-- [ ] Drop output schemas (`structured_output=False`); `get_assigned_cards` `limit` and `truncated`
+- [x] Drop output schemas (`structured_output=False`); `get_assigned_cards` `limit` and `truncated`
 
 PR 3 — CI and operations:
 

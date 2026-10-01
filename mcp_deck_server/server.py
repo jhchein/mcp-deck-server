@@ -37,6 +37,10 @@ _SKIPPABLE_BOARD_STATUS_CODES = frozenset({403, 404})
 MAX_TITLE_LENGTH = 255
 MAX_DESCRIPTION_LENGTH = 100_000
 
+# Default cap on cards returned by get_assigned_cards; protects agent context.
+DEFAULT_ASSIGNED_CARDS_LIMIT = 200
+MAX_ASSIGNED_CARDS_LIMIT = 1000
+
 # Upper bound on simultaneous Deck requests during a cross-board search.
 MAX_CONCURRENT_BOARD_REQUESTS = 5
 
@@ -134,7 +138,9 @@ def _register_tool[F: Callable[..., Any]](
     _TOOL_NAMES.add(function.__name__)
     if writes:
         _WRITE_TOOL_NAMES.add(function.__name__)
-    mcp.tool(annotations=annotations)(_with_deadline(function))
+    # Without structured output FastMCP omits the outputSchema and the duplicate
+    # structuredContent; clients still receive the JSON text content.
+    mcp.tool(annotations=annotations, structured_output=False)(_with_deadline(function))
     return function
 
 
@@ -416,13 +422,25 @@ async def get_assigned_cards(
         ),
     ] = None,
     compact: Annotated[bool, Field(description=_COMPACT_DESCRIPTION)] = False,
+    limit: Annotated[
+        int,
+        Field(
+            ge=1,
+            le=MAX_ASSIGNED_CARDS_LIMIT,
+            description=(
+                "Maximum number of cards to return. total_matches and truncated "
+                "report whether more cards matched."
+            ),
+        ),
+    ] = DEFAULT_ASSIGNED_CARDS_LIMIT,
 ) -> AssignedCards:
     """Find cards assigned to a user across boards.
 
     Filters by user, board, and done status, and returns board and stack context
     with each card. Boards are fetched concurrently. Boards that answer 403 or
-    404 are listed in skipped_boards instead of failing the whole search. Prefer
-    this over list_stacks plus manual filtering.
+    404 are listed in skipped_boards instead of failing the whole search. At most
+    limit cards are returned; truncated says whether more matched. Prefer this
+    over list_stacks plus manual filtering.
     """
     runtime = get_runtime()
     resolved_user_id = user_id or runtime.config.nc_user
@@ -465,7 +483,12 @@ async def get_assigned_cards(
 
     results = [card for cards, _ in outcomes for card in cards]
     skipped = [board for _, board in outcomes if board is not None]
-    return AssignedCards(cards=results, skipped_boards=skipped)
+    return AssignedCards(
+        cards=results[:limit],
+        skipped_boards=skipped,
+        total_matches=len(results),
+        truncated=len(results) > limit,
+    )
 
 
 @_write_tool(_CREATE)

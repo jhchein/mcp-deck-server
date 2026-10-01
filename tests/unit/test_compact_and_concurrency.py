@@ -11,7 +11,7 @@ from mcp_deck_server import server
 from mcp_deck_server.client import DeckHTTPError
 from mcp_deck_server.models import Card, CardSummary
 from mcp_deck_server.server import DeckRuntime
-from tests.helpers import load_fixture
+from tests.helpers import load_fixture, text_payload
 
 
 @pytest.fixture
@@ -164,12 +164,14 @@ async def test_compact_payload_is_smaller_over_the_mcp_boundary(
         router.route(method="GET", url=_api(runtime, "/boards/10/stacks")).mock(
             return_value=httpx.Response(200, json=_assigned_stacks())
         )
-        _, full = await server.mcp.call_tool(
+        full_content = await server.mcp.call_tool(
             "get_assigned_cards", {"board_ids": [10], "compact": False}
         )
-        _, compact = await server.mcp.call_tool(
+        compact_content = await server.mcp.call_tool(
             "get_assigned_cards", {"board_ids": [10], "compact": True}
         )
+    full = text_payload(full_content)
+    compact = text_payload(compact_content)
 
     full_card = full["cards"][0]["card"]
     compact_card = compact["cards"][0]["card"]

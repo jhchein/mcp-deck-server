@@ -106,7 +106,7 @@ The tool names are small on purpose. IDs come from Deck, so start with `list_boa
 | `get_board` | `board_id` | `Board` |
 | `list_stacks` | `board_id` | `list[Stack]` |
 | `list_cards` | `board_id`, `stack_id`, `done?`, `compact?` | `list[Card]` or `list[CardSummary]` |
-| `get_assigned_cards` | `user_id?`, `board_ids?`, `done?`, `compact?` | `AssignedCards` |
+| `get_assigned_cards` | `user_id?`, `board_ids?`, `done?`, `compact?`, `limit?` | `AssignedCards` |
 | `create_card` | `board_id`, `stack_id`, `title`, `description?` | `Card` |
 | `get_card` | `board_id`, `stack_id`, `card_id` | `Card` |
 | `update_card` | `board_id`, `stack_id`, `card_id`, optional card fields | `Card` |
@@ -121,7 +121,9 @@ A few tools have behavior worth calling out.
 
 `update_card` fetches the current card, merges the fields you provide, and sends the full Deck payload back. For text and datetime fields, `None` means keep the current value. For nullable text and datetime fields, `""` means clear the value. `done` is an ISO-8601 datetime string or `""`, never a boolean.
 
-`get_assigned_cards` returns `{cards, skipped_boards}`. A board that answers 403 or 404 is listed in `skipped_boards` instead of failing the whole search.
+`get_assigned_cards` returns `{cards, skipped_boards, total_matches, truncated}`. A board that answers 403 or 404 is listed in `skipped_boards` instead of failing the whole search. At most `limit` cards are returned (default 200, maximum 1000); `truncated` tells the agent that more matched.
+
+Tools return their result as JSON text and do not advertise an output schema, which keeps the tool list at about 11 KB instead of about 68 KB.
 
 `compact=true` on `list_cards` and `get_assigned_cards` returns slim `CardSummary` objects (`id`, `title`, `stackId`, `duedate`, `done`, `archived`, label titles, assignee user IDs) instead of full cards. In a live check it cut an all-boards `get_assigned_cards` payload from about 53 KB to about 7.5 KB, which saves agent context. Use `get_card` for descriptions and other details. `get_assigned_cards` fetches boards concurrently, at most five at a time.
 

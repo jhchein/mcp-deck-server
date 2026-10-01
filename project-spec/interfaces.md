@@ -24,7 +24,7 @@ Tool docstrings and `Annotated[..., Field(description=...)]` parameter hints are
 | `remove_label_from_card`  | `board_id: int, stack_id: int, card_id: int, label_id: int`                                                     | `Dict`             |
 | `assign_user_to_card`     | `board_id: int, stack_id: int, card_id: int, user_id: str`                                                      | `Dict`             |
 | `unassign_user_from_card` | `board_id: int, stack_id: int, card_id: int, user_id: str`                                                      | `Dict`             |
-| `get_assigned_cards`      | `user_id?: str, board_ids?: list[int], done?: bool, compact?: bool`                                                             | `AssignedCards`     | <!-- decision 015; done is a filter predicate (truthy match on card.done datetime), not a value to write --> |
+| `get_assigned_cards`      | `user_id?: str, board_ids?: list[int], done?: bool, compact?: bool, limit?: int`                                                          | `AssignedCards`     | <!-- decision 015; done is a filter predicate (truthy match on card.done datetime), not a value to write --> |
 
 ## Nextcloud Deck API
 
@@ -66,7 +66,7 @@ class CardResult(DeckBaseModel):
 - `Assignment` matches the actual Deck API response shape (`assignUser` endpoint returns `{ id, participant: Owner, cardId, type }`)
 - `CardSummary` (`id, title, stackId, duedate, done, archived, labels: list[str], assignees: list[str]`) is the slim view returned when `compact=true`; `CardResult.card` is `Card | CardSummary` (decision 018)
 - `CardResult` is a read-only view model for `get_assigned_cards` — enriches cards with board/stack context
-- `AssignedCards` (`cards: list[CardResult]`, `skipped_boards: list[SkippedBoard]`) is the `get_assigned_cards` return type; `SkippedBoard` is `{board_id, reason}` for boards answering 403/404 (decision 018)
+- `AssignedCards` (`cards: list[CardResult]`, `skipped_boards: list[SkippedBoard]`, `total_matches: int`, `truncated: bool`) is the `get_assigned_cards` return type, capped by `limit` (decision 019); `SkippedBoard` is `{board_id, reason}` for boards answering 403/404 (decision 018)
 
 ## Exception Hierarchy
 
