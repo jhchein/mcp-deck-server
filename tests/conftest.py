@@ -16,6 +16,7 @@ def test_config() -> DeckConfig:
         nc_app_password="app-password",
         nc_api_version="v1.1",
         request_timeout=30.0,
+        max_retries=0,
     )
 
 

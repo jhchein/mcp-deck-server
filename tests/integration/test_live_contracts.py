@@ -134,7 +134,7 @@ async def test_all_tool_endpoints_against_live_instance(
                 user_id=user_id,
                 board_ids=[board_id],
             )
-            assert any(result.card.id == card_id for result in assigned_cards)
+            assert any(result.card.id == card_id for result in assigned_cards.cards)
 
             # --- unassign_user_from_card ---
             unassign_user_result = await server.unassign_user_from_card(

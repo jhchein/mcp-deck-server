@@ -150,3 +150,21 @@ Cleanup:
 - [x] Keep full response models; do not introduce summary models yet
 - [x] Remove `MCP_TRANSPORT` support and hardcode stdio in `main.py`
 - [x] Update config tests and project-spec docs to reflect stdio-only transport
+
+## Phase 8: Robustness, hardening and performance (decision 018)
+
+PR 1 — robustness:
+
+- [x] Include Deck's error message in `DeckHTTPError`; add `DeckResponseError` for non-JSON success bodies
+- [x] Retry transient `GET` failures with backoff (`MCP_MAX_RETRIES`); never retry writes
+- [x] `get_assigned_cards` returns `AssignedCards` and skips boards answering 403/404
+- [x] `move_card`: keep order 0, reject ambiguous stack names, add `target_stack_id`
+- [x] Replace the `mcp-server` shim with `mcp`; declare `pydantic`
+
+PR 2 — security hardening:
+
+- [ ] `MCP_READ_ONLY` mode, MCP tool annotations, HTTPS rule, API version check, input length caps, audit log
+
+PR 3 — performance and ergonomics:
+
+- [ ] `list_cards` via the stack endpoint, concurrent `get_assigned_cards`, `compact` output

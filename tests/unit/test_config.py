@@ -26,6 +26,7 @@ def test_load_config_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("NC_APP_PASSWORD", "secret")
     monkeypatch.delenv("NC_API_VERSION", raising=False)
     monkeypatch.delenv("MCP_REQUEST_TIMEOUT", raising=False)
+    monkeypatch.delenv("MCP_MAX_RETRIES", raising=False)
 
     config = load_config()
     field_names = {field.name for field in dataclasses.fields(config)}
@@ -38,8 +39,10 @@ def test_load_config_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
         "nc_app_password",
         "nc_api_version",
         "request_timeout",
+        "max_retries",
     }
     assert config.request_timeout == 30.0
+    assert config.max_retries == 2
 
 
 def test_load_config_rejects_non_http_url(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -100,3 +103,27 @@ def test_load_config_timeout_must_be_positive(
 
     with pytest.raises(ValueError, match="MCP_REQUEST_TIMEOUT must be greater than 0"):
         load_config()
+
+
+@pytest.mark.parametrize("raw_value", ["abc", "-1", "6", "1.5"])
+def test_load_config_rejects_invalid_max_retries(
+    monkeypatch: pytest.MonkeyPatch, raw_value: str
+) -> None:
+    monkeypatch.setenv("NC_URL", "https://nextcloud.example.test")
+    monkeypatch.setenv("NC_USER", "alice")
+    monkeypatch.setenv("NC_APP_PASSWORD", "secret")
+    monkeypatch.setenv("MCP_MAX_RETRIES", raw_value)
+
+    with pytest.raises(ValueError, match="MCP_MAX_RETRIES"):
+        load_config()
+
+
+def test_load_config_accepts_zero_max_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NC_URL", "https://nextcloud.example.test")
+    monkeypatch.setenv("NC_USER", "alice")
+    monkeypatch.setenv("NC_APP_PASSWORD", "secret")
+    monkeypatch.setenv("MCP_MAX_RETRIES", "0")
+
+    assert load_config().max_retries == 0
