@@ -6,7 +6,7 @@ This review records the first measured performance baseline for the Deck MCP ser
 
 The current implementation is fast enough for normal MCP use. Every live tool path measured on the configured test board completed below one second, including disposable-card `move_card`. The broadest read path, unscoped `get_assigned_cards`, was the slowest because it scans every accessible board, but it still completed below the advisory threshold for an instant-feeling tool call in this baseline.
 
-We do not recommend performance code changes now. The only follow-up worth keeping is conditional caching research for `list_boards`, because that endpoint returned an ETag and honored `If-None-Match`. Stack payloads did not expose an ETag in this run, and both checked endpoints sent `Cache-Control: no-cache, no-store, must-revalidate`, so caching must stay conservative.
+This review recommended no performance code changes at the time. Decision 018 later added concurrent board scanning and compact output (see below). The only other follow-up worth keeping is conditional caching research for `list_boards`, because that endpoint returned an ETag and honored `If-None-Match`. Stack payloads did not expose an ETag in this run, and both checked endpoints sent `Cache-Control: no-cache, no-store, must-revalidate`, so caching must stay conservative.
 
 ## Review thresholds
 
@@ -67,6 +67,21 @@ This run used API version `v1.1`, six accessible boards, and a configured test b
 | Archive disposable card cleanup | `158.63 ms` |
 
 The live numbers are comfortably below one second. The broad assigned-card scan is the path to watch because it scales with the number of accessible boards, but this baseline does not justify adding cache state or more complex request planning.
+
+## Concurrent scan and compact output
+
+Decision 018 changed `get_assigned_cards` to fetch boards concurrently, at most five at a time. We measured it live against the same anonymized instance (six accessible boards, 26 assigned cards) with three consecutive runs, and compared it with a sequential loop over the same requests.
+
+| Measurement | Result |
+| --- | --- |
+| Sequential `GET /boards` plus one `GET /stacks` per board | `838 ms` |
+| Concurrent `get_assigned_cards()`, three runs | `546 ms`, `348 ms`, `287 ms` |
+| All-boards result as JSON, full cards | about `53 KB` |
+| All-boards result as JSON, `compact=true` | about `7.5 KB` |
+
+The first concurrent run includes connection setup, so the later runs are the better steady-state figure. Compact output matters more for agents than the latency gain: it cuts the tokens spent on each cross-board search by roughly 85 percent.
+
+We also checked `GET /boards/{id}/stacks/{id}` as a cheaper way to read one stack for `list_cards`. It returns the same cards, but with `labels` set to `null` and `owner` as a plain string. Using it would silently drop labels, so `list_cards` keeps reading the stack list.
 
 ## Caching assessment
 

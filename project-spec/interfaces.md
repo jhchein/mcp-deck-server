@@ -14,7 +14,7 @@ Tool docstrings and `Annotated[..., Field(description=...)]` parameter hints are
 | `list_boards`             | —                                                                                                               | `List[Board]`      |
 | `get_board`               | `board_id: int`                                                                                                 | `Board`            |
 | `list_stacks`             | `board_id: int`                                                                                                 | `List[Stack]`      |
-| `list_cards`              | `board_id: int, stack_id: int, done?: bool`                                                                     | `List[Card]`       | <!-- extracts from stacks endpoint; no dedicated cards-list API exists (decision 014); done filter matches get_assigned_cards semantics --> |
+| `list_cards`              | `board_id: int, stack_id: int, done?: bool, compact?: bool`                                                                     | `List[Card]`       | <!-- extracts from stacks endpoint; no dedicated cards-list API exists (decision 014); done filter matches get_assigned_cards semantics --> |
 | `create_card`             | `board_id: int, stack_id: int, title: str, description: str = ""`                                               | `Card`             |
 | `get_card`                | `board_id: int, stack_id: int, card_id: int`                                                                    | `Card`             |
 | `update_card`             | `board_id: int, stack_id: int, card_id: int, title?, description?, duedate?, done?, card_type?, owner?, order?` | `Card`             | <!-- decision 016: exhaustive fetch-merge; done/order added; card_type default changed to None -->           |
@@ -24,7 +24,7 @@ Tool docstrings and `Annotated[..., Field(description=...)]` parameter hints are
 | `remove_label_from_card`  | `board_id: int, stack_id: int, card_id: int, label_id: int`                                                     | `Dict`             |
 | `assign_user_to_card`     | `board_id: int, stack_id: int, card_id: int, user_id: str`                                                      | `Dict`             |
 | `unassign_user_from_card` | `board_id: int, stack_id: int, card_id: int, user_id: str`                                                      | `Dict`             |
-| `get_assigned_cards`      | `user_id?: str, board_ids?: list[int], done?: bool`                                                             | `AssignedCards`     | <!-- decision 015; done is a filter predicate (truthy match on card.done datetime), not a value to write --> |
+| `get_assigned_cards`      | `user_id?: str, board_ids?: list[int], done?: bool, compact?: bool`                                                             | `AssignedCards`     | <!-- decision 015; done is a filter predicate (truthy match on card.done datetime), not a value to write --> |
 
 ## Nextcloud Deck API
 
@@ -40,6 +40,7 @@ Tool docstrings and `Annotated[..., Field(description=...)]` parameter hints are
 - `archive_card` endpoint is **undocumented** — works empirically, no official alternative (decision 013)
 - `owner` field in PUT card payload is **undocumented but required** — server returns 400 without it (decisions 013, 016)
 - `move_card` reorder must use the target stack ID in the URL and payload: `PUT /boards/{boardId}/stacks/{targetStackId}/cards/{cardId}/reorder` with `stackId=targetStackId` (decision 014)
+- `GET /boards/{boardId}/stacks/{stackId}` returns degraded cards (`labels: null`, `owner` as a string), so card listings must read the stack list, not the single-stack endpoint (decision 018, live-checked)
 - `move_card` must only return success after verifying the moved card's `stackId` is the target stack ID; stale reorder responses are refreshed from the target stack (decision 014)
 
 ## Models — `Assignment`, `CardResult` (decision 015), `Card.done` narrowing (decision 016)
@@ -62,6 +63,7 @@ class CardResult(DeckBaseModel):
 - `Card.assignedUsers` type changes from `list[Owner] | None` to `list[Assignment] | None`
 - `Card.done` type changes from `str | bool | None` to `str | None` — it's an ISO-8601 datetime, not a boolean (decision 016)
 - `Assignment` matches the actual Deck API response shape (`assignUser` endpoint returns `{ id, participant: Owner, cardId, type }`)
+- `CardSummary` (`id, title, stackId, duedate, done, archived, labels: list[str], assignees: list[str]`) is the slim view returned when `compact=true`; `CardResult.card` is `Card | CardSummary` (decision 018)
 - `CardResult` is a read-only view model for `get_assigned_cards` — enriches cards with board/stack context
 - `AssignedCards` (`cards: list[CardResult]`, `skipped_boards: list[SkippedBoard]`) is the `get_assigned_cards` return type; `SkippedBoard` is `{board_id, reason}` for boards answering 403/404 (decision 018)
 

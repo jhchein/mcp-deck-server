@@ -87,8 +87,8 @@ The tool names are small on purpose. IDs come from Deck, so start with `list_boa
 | `list_boards` | None | `list[Board]` |
 | `get_board` | `board_id` | `Board` |
 | `list_stacks` | `board_id` | `list[Stack]` |
-| `list_cards` | `board_id`, `stack_id`, `done?` | `list[Card]` |
-| `get_assigned_cards` | `user_id?`, `board_ids?`, `done?` | `AssignedCards` |
+| `list_cards` | `board_id`, `stack_id`, `done?`, `compact?` | `list[Card]` or `list[CardSummary]` |
+| `get_assigned_cards` | `user_id?`, `board_ids?`, `done?`, `compact?` | `AssignedCards` |
 | `create_card` | `board_id`, `stack_id`, `title`, `description?` | `Card` |
 | `get_card` | `board_id`, `stack_id`, `card_id` | `Card` |
 | `update_card` | `board_id`, `stack_id`, `card_id`, optional card fields | `Card` |
@@ -99,11 +99,13 @@ The tool names are small on purpose. IDs come from Deck, so start with `list_boa
 | `assign_user_to_card` | `board_id`, `stack_id`, `card_id`, `user_id` | `dict` |
 | `unassign_user_from_card` | `board_id`, `stack_id`, `card_id`, `user_id` | `dict` |
 
-Three tools have behavior worth calling out.
+A few tools have behavior worth calling out.
 
 `update_card` fetches the current card, merges the fields you provide, and sends the full Deck payload back. For text and datetime fields, `None` means keep the current value. For nullable text and datetime fields, `""` means clear the value. `done` is an ISO-8601 datetime string or `""`, never a boolean.
 
 `get_assigned_cards` returns `{cards, skipped_boards}`. A board that answers 403 or 404 is listed in `skipped_boards` instead of failing the whole search.
+
+`compact=true` on `list_cards` and `get_assigned_cards` returns slim `CardSummary` objects (`id`, `title`, `stackId`, `duedate`, `done`, `archived`, label titles, assignee user IDs) instead of full cards. In a live check it cut an all-boards `get_assigned_cards` payload from about 53 KB to about 7.5 KB, which saves agent context. Use `get_card` for descriptions and other details. `get_assigned_cards` fetches boards concurrently, at most five at a time.
 
 `move_card` resolves `target_stack_name` case-insensitively, uses the target-stack reorder endpoint, and verifies the card actually ended up in the target stack. If the stack name is wrong, the error includes the available stacks with their IDs. If several stacks share the name, the error lists their IDs and you pass `target_stack_id` instead.
 

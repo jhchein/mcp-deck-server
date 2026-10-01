@@ -73,12 +73,25 @@ class Stack(DeckBaseModel):
     ETag: str | None = None
 
 
+class CardSummary(DeckBaseModel):
+    """Slim card view for agents that only need to scan or triage cards."""
+
+    id: int | None = None
+    title: str | None = None
+    stackId: int | None = None
+    duedate: str | None = None
+    done: str | None = None
+    archived: bool = False
+    labels: list[str] = []
+    assignees: list[str] = []
+
+
 class CardResult(DeckBaseModel):
     board_id: int
     board_title: str
     stack_id: int
     stack_title: str
-    card: Card
+    card: Card | CardSummary
 
 
 class SkippedBoard(DeckBaseModel):
