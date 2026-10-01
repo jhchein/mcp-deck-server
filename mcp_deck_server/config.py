@@ -14,6 +14,10 @@ class DeckConfig:
     nc_app_password: str = dataclasses.field(repr=False)
     nc_api_version: str = "v1.1"
     request_timeout: float = 30.0
+    max_retries: int = 2
+
+
+MAX_RETRIES_LIMIT = 5
 
 
 def load_config() -> DeckConfig:
@@ -45,10 +49,19 @@ def load_config() -> DeckConfig:
     if request_timeout <= 0:
         raise ValueError("MCP_REQUEST_TIMEOUT must be greater than 0")
 
+    max_retries_raw = os.getenv("MCP_MAX_RETRIES", "2").strip() or "2"
+    try:
+        max_retries = int(max_retries_raw)
+    except ValueError as error:
+        raise ValueError("MCP_MAX_RETRIES must be an integer") from error
+    if not 0 <= max_retries <= MAX_RETRIES_LIMIT:
+        raise ValueError(f"MCP_MAX_RETRIES must be between 0 and {MAX_RETRIES_LIMIT}")
+
     return DeckConfig(
         nc_url=nc_url.rstrip("/"),
         nc_user=nc_user,
         nc_app_password=nc_app_password,
         nc_api_version=nc_api_version,
         request_timeout=request_timeout,
+        max_retries=max_retries,
     )

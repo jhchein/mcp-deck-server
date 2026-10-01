@@ -26,7 +26,7 @@
 ## Tech Stack
 
 - **Languages**: Python 3.13+
-- **Frameworks**: FastMCP (mcp-server), httpx, Pydantic, python-dotenv
+- **Frameworks**: FastMCP (`mcp`), httpx, Pydantic, python-dotenv
 - **Package manager**: uv
 - **Testing**: pytest, pytest-asyncio, respx, pytest-cov
 - **Linting/Typing**: ruff, pyright

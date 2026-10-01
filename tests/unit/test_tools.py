@@ -8,6 +8,7 @@ import pytest
 import respx
 
 from mcp_deck_server import server
+from mcp_deck_server.client import DeckHTTPError
 from mcp_deck_server.server import DeckRuntime
 from tests.helpers import load_fixture
 
@@ -198,7 +199,7 @@ async def test_get_assigned_cards_defaults_to_self_across_accessible_boards(
             url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/11/stacks",
         ).mock(return_value=httpx.Response(200, json=second_board_stacks))
 
-        cards = await server.get_assigned_cards()
+        cards = (await server.get_assigned_cards()).cards
 
     assert len(cards) == 2
     assert cards[0].board_id == 10
@@ -221,7 +222,7 @@ async def test_get_assigned_cards_uses_explicit_board_ids_without_listing_boards
             url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks",
         ).mock(return_value=httpx.Response(200, json=stacks_payload))
 
-        cards = await server.get_assigned_cards(board_ids=[10])
+        cards = (await server.get_assigned_cards(board_ids=[10])).cards
 
     assert route.called
     assert len(cards) == 1
@@ -252,11 +253,13 @@ async def test_get_assigned_cards_filters_by_explicit_user_and_done(
             url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks",
         ).mock(return_value=httpx.Response(200, json=stacks_payload))
 
-        cards = await server.get_assigned_cards(
-            user_id="alice",
-            board_ids=[10],
-            done=True,
-        )
+        cards = (
+            await server.get_assigned_cards(
+                user_id="alice",
+                board_ids=[10],
+                done=True,
+            )
+        ).cards
 
     assert len(cards) == 1
     assert cards[0].card.id == 82
@@ -277,7 +280,7 @@ async def test_get_assigned_cards_returns_empty_when_no_matching_assignment(
             url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks",
         ).mock(return_value=httpx.Response(200, json=stacks_payload))
 
-        cards = await server.get_assigned_cards(board_ids=[10])
+        cards = (await server.get_assigned_cards(board_ids=[10])).cards
 
     assert cards == []
 
@@ -1084,7 +1087,7 @@ async def test_get_assigned_cards_skips_stack_with_null_id(
             url=f"{runtime.config.nc_url}/index.php/apps/deck/api/{runtime.config.nc_api_version}/boards/10/stacks",
         ).mock(return_value=httpx.Response(200, json=stacks_payload))
 
-        cards = await server.get_assigned_cards(board_ids=[10])
+        cards = (await server.get_assigned_cards(board_ids=[10])).cards
 
     assert len(cards) == 1
     assert cards[0].stack_id == 5
@@ -1116,3 +1119,160 @@ async def test_update_card_falls_back_to_config_user_when_owner_is_null(
         await server.update_card(10, 4, 81)
 
     assert captured_payload["owner"] == "alice"
+
+
+def _api(runtime: DeckRuntime, path: str) -> str:
+    return (
+        f"{runtime.config.nc_url}/index.php/apps/deck/api/"
+        f"{runtime.config.nc_api_version}{path}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_assigned_cards_skips_forbidden_and_missing_boards(
+    patched_runtime: None, runtime: DeckRuntime
+) -> None:
+    stacks_payload = json.loads(json.dumps(load_fixture("stacks_list.json")))
+    stacks_payload[0]["cards"] = [load_fixture("assigned_card.json")]
+
+    with respx.mock(assert_all_called=True) as router:
+        router.route(method="GET", url=_api(runtime, "/boards/10/stacks")).mock(
+            return_value=httpx.Response(200, json=stacks_payload)
+        )
+        router.route(method="GET", url=_api(runtime, "/boards/11/stacks")).mock(
+            return_value=httpx.Response(403, json={"message": "forbidden"})
+        )
+        router.route(method="GET", url=_api(runtime, "/boards/12/stacks")).mock(
+            return_value=httpx.Response(404, json={"message": "gone"})
+        )
+
+        result = await server.get_assigned_cards(board_ids=[10, 11, 12])
+
+    assert [item.board_id for item in result.cards] == [10]
+    assert [(item.board_id, item.reason) for item in result.skipped_boards] == [
+        (11, "HTTP 403"),
+        (12, "HTTP 404"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_assigned_cards_propagates_server_errors(
+    patched_runtime: None, runtime: DeckRuntime
+) -> None:
+    with respx.mock(assert_all_called=True) as router:
+        router.route(method="GET", url=_api(runtime, "/boards/10/stacks")).mock(
+            return_value=httpx.Response(500, json={"message": "boom"})
+        )
+
+        with pytest.raises(DeckHTTPError, match="boom"):
+            await server.get_assigned_cards(board_ids=[10])
+
+
+def _stacks_with_duplicate_names() -> list[dict[str, object]]:
+    stacks = json.loads(json.dumps(load_fixture("stacks_list.json")))
+    stacks.append({"id": 6, "title": "done", "boardId": 10, "cards": []})
+    return stacks
+
+
+@pytest.mark.asyncio
+async def test_move_card_rejects_ambiguous_stack_name(
+    patched_runtime: None, runtime: DeckRuntime
+) -> None:
+    with respx.mock(assert_all_called=True) as router:
+        router.route(method="GET", url=_api(runtime, "/boards/10/stacks")).mock(
+            return_value=httpx.Response(200, json=_stacks_with_duplicate_names())
+        )
+
+        with pytest.raises(ValueError, match=r"ambiguous \(stack IDs: 5, 6\)"):
+            await server.move_card(10, 81, "Done")
+
+
+@pytest.mark.asyncio
+async def test_move_card_target_stack_id_disambiguates(
+    patched_runtime: None, runtime: DeckRuntime
+) -> None:
+    with respx.mock(assert_all_called=True) as router:
+        router.route(method="GET", url=_api(runtime, "/boards/10/stacks")).mock(
+            return_value=httpx.Response(200, json=_stacks_with_duplicate_names())
+        )
+        reorder_route = router.route(
+            method="PUT", url=_api(runtime, "/boards/10/stacks/5/cards/81/reorder")
+        ).mock(
+            return_value=httpx.Response(
+                200, json=load_fixture("card_reorder_response.json")
+            )
+        )
+
+        card = await server.move_card(10, 81, target_stack_id=5)
+
+    assert reorder_route.called
+    assert card.stackId == 5
+
+
+@pytest.mark.asyncio
+async def test_move_card_unknown_target_stack_id_lists_available_stacks(
+    patched_runtime: None, runtime: DeckRuntime
+) -> None:
+    with respx.mock(assert_all_called=True) as router:
+        router.route(method="GET", url=_api(runtime, "/boards/10/stacks")).mock(
+            return_value=httpx.Response(200, json=load_fixture("stacks_list.json"))
+        )
+
+        with pytest.raises(ValueError, match=r"Stack ID 99 not found.*Done \(id 5\)"):
+            await server.move_card(10, 81, target_stack_id=99)
+
+
+@pytest.mark.asyncio
+async def test_move_card_requires_a_target(patched_runtime: None) -> None:
+    with pytest.raises(ValueError, match="target_stack_name or target_stack_id"):
+        await server.move_card(10, 81)
+
+
+@pytest.mark.asyncio
+async def test_move_card_keeps_order_zero(
+    patched_runtime: None, runtime: DeckRuntime
+) -> None:
+    stacks = json.loads(json.dumps(load_fixture("stacks_list.json")))
+    stacks[0]["cards"][0]["order"] = 0
+    captured_payload: dict[str, object] = {}
+
+    def capture_reorder(request: httpx.Request) -> httpx.Response:
+        captured_payload.update(json.loads(request.content.decode("utf-8")))
+        return httpx.Response(200, json=load_fixture("card_reorder_response.json"))
+
+    with respx.mock(assert_all_called=True) as router:
+        router.route(method="GET", url=_api(runtime, "/boards/10/stacks")).mock(
+            return_value=httpx.Response(200, json=stacks)
+        )
+        router.route(
+            method="PUT", url=_api(runtime, "/boards/10/stacks/5/cards/81/reorder")
+        ).mock(side_effect=capture_reorder)
+
+        await server.move_card(10, 81, "Done")
+
+    assert captured_payload["order"] == 0
+
+
+@pytest.mark.asyncio
+async def test_update_card_keeps_existing_order_zero(
+    patched_runtime: None, runtime: DeckRuntime
+) -> None:
+    card_payload = json.loads(json.dumps(load_fixture("card.json")))
+    card_payload["order"] = 0
+    captured_payload: dict[str, object] = {}
+
+    def capture_update(request: httpx.Request) -> httpx.Response:
+        captured_payload.update(json.loads(request.content.decode("utf-8")))
+        return httpx.Response(200, json=card_payload)
+
+    with respx.mock(assert_all_called=True) as router:
+        router.route(
+            method="GET", url=_api(runtime, "/boards/10/stacks/4/cards/81")
+        ).mock(return_value=httpx.Response(200, json=card_payload))
+        router.route(
+            method="PUT", url=_api(runtime, "/boards/10/stacks/4/cards/81")
+        ).mock(side_effect=capture_update)
+
+        await server.update_card(10, 4, 81)
+
+    assert captured_payload["order"] == 0

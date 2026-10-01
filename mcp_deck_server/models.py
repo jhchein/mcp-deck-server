@@ -81,6 +81,16 @@ class CardResult(DeckBaseModel):
     card: Card
 
 
+class SkippedBoard(DeckBaseModel):
+    board_id: int
+    reason: str
+
+
+class AssignedCards(DeckBaseModel):
+    cards: list[CardResult]
+    skipped_boards: list[SkippedBoard]
+
+
 class Board(DeckBaseModel):
     id: int | None = None
     title: str | None = None

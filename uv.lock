@@ -412,7 +412,8 @@ source = { virtual = "." }
 dependencies = [
     { name = "cryptography" },
     { name = "httpx" },
-    { name = "mcp-server" },
+    { name = "mcp" },
+    { name = "pydantic" },
     { name = "python-dotenv" },
 ]
 
@@ -430,7 +431,8 @@ dev = [
 requires-dist = [
     { name = "cryptography", specifier = ">=46.0.7" },
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "mcp-server", specifier = ">=0.1.4" },
+    { name = "mcp", specifier = ">=1.27.0" },
+    { name = "pydantic", specifier = ">=2.11" },
     { name = "python-dotenv", specifier = ">=1.1.1" },
 ]
 
@@ -442,18 +444,6 @@ dev = [
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "respx", specifier = ">=0.21.1" },
     { name = "ruff", specifier = ">=0.8.0" },
-]
-
-[[package]]
-name = "mcp-server"
-version = "0.1.4"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "mcp" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/97/d4/e47e2c1a17a05a2764715ede29a230e5d0c1f507a23505d36d752d6678c3/mcp_server-0.1.4.tar.gz", hash = "sha256:8440ff4427e31006aec8782f8490bd57ccaf3f63e806e180a9042a70602f141e", size = 9897, upload-time = "2025-04-11T10:50:03.841Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/dd/76/1edf7103089231cc7de340bcdd466e0550ff5e7594cf8061081d6f551a17/mcp_server-0.1.4-py3-none-any.whl", hash = "sha256:f3f0be6028aff41e2969f68be2ca5c0282b6337ebed33d0556dea1c9a1337221", size = 4002, upload-time = "2025-04-11T10:50:00.318Z" },
 ]
 
 [[package]]

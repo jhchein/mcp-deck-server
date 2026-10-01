@@ -11,7 +11,11 @@ from pydantic import Field
 
 from .client import DeckHTTPError, make_nc_request
 from .config import DeckConfig, load_config
-from .models import Board, Card, CardResult, Owner, Stack
+from .models import AssignedCards, Board, Card, CardResult, Owner, SkippedBoard, Stack
+
+# Boards the user cannot read or that no longer exist should not abort a
+# cross-board search.
+_SKIPPABLE_BOARD_STATUS_CODES = frozenset({403, 404})
 
 
 @dataclass(frozen=True)
@@ -198,11 +202,13 @@ async def get_assigned_cards(
             )
         ),
     ] = None,
-) -> list[CardResult]:
+) -> AssignedCards:
     """Find cards assigned to a user across boards.
 
     Filters by user, board, and done status, and returns board and stack context
-    with each card. Prefer this over list_stacks plus manual filtering.
+    with each card. Boards that answer 403 or 404 are listed in skipped_boards
+    instead of failing the whole search. Prefer this over list_stacks plus
+    manual filtering.
     """
     runtime = get_runtime()
     resolved_user_id = user_id or runtime.config.nc_user
@@ -222,13 +228,25 @@ async def get_assigned_cards(
         ]
 
     results: list[CardResult] = []
+    skipped: list[SkippedBoard] = []
     for board_id, board_title in boards_to_query:
-        stacks_response = await make_nc_request(
-            runtime.client,
-            runtime.config,
-            "GET",
-            f"/boards/{board_id}/stacks",
-        )
+        try:
+            stacks_response = await make_nc_request(
+                runtime.client,
+                runtime.config,
+                "GET",
+                f"/boards/{board_id}/stacks",
+            )
+        except DeckHTTPError as error:
+            if error.status_code not in _SKIPPABLE_BOARD_STATUS_CODES:
+                raise
+            skipped.append(
+                SkippedBoard(
+                    board_id=board_id,
+                    reason=f"HTTP {error.status_code}",
+                )
+            )
+            continue
         stacks = [Stack.model_validate(stack_data) for stack_data in stacks_response]
         for stack in stacks:
             if stack.id is None:
@@ -247,7 +265,7 @@ async def get_assigned_cards(
                         card=card,
                     )
                 )
-    return results
+    return AssignedCards(cards=results, skipped_boards=skipped)
 
 
 @mcp.tool()
@@ -336,7 +354,9 @@ async def update_card(
     The current card is fetched first and only provided fields are changed. For
     text fields, None keeps the current value and an empty string clears it.
     For duedate and done, use None to keep, an empty string to clear, or an
-    ISO-8601 datetime string to set a new value.
+    ISO-8601 datetime string to set a new value. The Deck API has no conditional
+    update, so a concurrent edit made between the fetch and the write can be
+    overwritten.
     """
     runtime = get_runtime()
     current_card_data = await make_nc_request(
@@ -365,7 +385,9 @@ async def update_card(
         "title": title,
         "description": resolved_description,
         "type": card_type if card_type is not None else (current_card.type or "plain"),
-        "order": order if order is not None else (current_card.order or 0),
+        "order": order
+        if order is not None
+        else (current_card.order if current_card.order is not None else 0),
         "duedate": resolved_duedate,
         "done": resolved_done,
     }
@@ -391,15 +413,28 @@ async def move_card(
     board_id: int,
     card_id: int,
     target_stack_name: Annotated[
-        str,
+        str | None,
         Field(description="Name of the destination stack. Case-insensitive."),
-    ],
+    ] = None,
+    target_stack_id: Annotated[
+        int | None,
+        Field(
+            description=(
+                "ID of the destination stack. Use it when several stacks share a "
+                "name; takes precedence over target_stack_name."
+            )
+        ),
+    ] = None,
 ) -> Card:
     """Move a card to a different stack on the same board.
 
-    Stack name matching is case-insensitive. If no stack matches, the error
-    lists the available stack names.
+    Provide target_stack_name or target_stack_id. Name matching is
+    case-insensitive. If no stack matches, the error lists the available
+    stacks; if several match, the error lists their IDs.
     """
+    if target_stack_name is None and target_stack_id is None:
+        raise ValueError("Provide target_stack_name or target_stack_id")
+
     runtime = get_runtime()
     stacks_data = await make_nc_request(
         runtime.client,
@@ -409,18 +444,9 @@ async def move_card(
     )
     stacks = [Stack.model_validate(stack_data) for stack_data in stacks_data]
 
-    target_stack_id: int | None = None
     current_stack_id: int | None = None
     current_card_order: int | None = None
-
     for stack in stacks:
-        if (
-            stack.title
-            and stack.title.lower() == target_stack_name.lower()
-            and stack.id is not None
-        ):
-            target_stack_id = stack.id
-
         for card in stack.cards or []:
             if card.archived:
                 continue
@@ -428,18 +454,49 @@ async def move_card(
                 current_stack_id = stack.id
                 current_card_order = card.order
 
-    if target_stack_id is None:
-        available_stacks = ", ".join(stack.title or "<untitled>" for stack in stacks)
-        error_message = (
-            f"Stack '{target_stack_name}' not found. "
-            f"Available stacks: {available_stacks}"
+    if target_stack_id is not None:
+        matching_ids = [
+            stack.id
+            for stack in stacks
+            if stack.id is not None and stack.id == target_stack_id
+        ]
+    else:
+        wanted_name = (target_stack_name or "").lower()
+        matching_ids = [
+            stack.id
+            for stack in stacks
+            if stack.title
+            and stack.id is not None
+            and stack.title.lower() == wanted_name
+        ]
+
+    if not matching_ids:
+        available_stacks = ", ".join(
+            f"{stack.title or '<untitled>'} (id {stack.id})" for stack in stacks
         )
-        raise ValueError(error_message)
+        requested = (
+            f"ID {target_stack_id}"
+            if target_stack_id is not None
+            else f"'{target_stack_name}'"
+        )
+        raise ValueError(
+            f"Stack {requested} not found. Available stacks: {available_stacks}"
+        )
+    if len(matching_ids) > 1:
+        raise ValueError(
+            f"Stack name '{target_stack_name}' is ambiguous (stack IDs: "
+            f"{', '.join(str(stack_id) for stack_id in matching_ids)}). "
+            "Pass target_stack_id instead."
+        )
+    target_stack_id = matching_ids[0]
 
     if current_stack_id is None:
         raise ValueError(f"Card with ID {card_id} not found on board {board_id}")
 
-    payload = {"stackId": target_stack_id, "order": current_card_order or 999}
+    payload = {
+        "stackId": target_stack_id,
+        "order": current_card_order if current_card_order is not None else 999,
+    }
     response = await make_nc_request(
         runtime.client,
         runtime.config,

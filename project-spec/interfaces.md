@@ -18,13 +18,13 @@ Tool docstrings and `Annotated[..., Field(description=...)]` parameter hints are
 | `create_card`             | `board_id: int, stack_id: int, title: str, description: str = ""`                                               | `Card`             |
 | `get_card`                | `board_id: int, stack_id: int, card_id: int`                                                                    | `Card`             |
 | `update_card`             | `board_id: int, stack_id: int, card_id: int, title?, description?, duedate?, done?, card_type?, owner?, order?` | `Card`             | <!-- decision 016: exhaustive fetch-merge; done/order added; card_type default changed to None -->           |
-| `move_card`               | `board_id: int, card_id: int, target_stack_name: str`                                                           | `Card`             |
+| `move_card`               | `board_id: int, card_id: int, target_stack_name?: str, target_stack_id?: int`                                                           | `Card`             |
 | `archive_card`            | `board_id: int, stack_id: int, card_id: int`                                                                    | `Card`             |
 | `assign_label_to_card`    | `board_id: int, stack_id: int, card_id: int, label_id: int`                                                     | `Dict`             |
 | `remove_label_from_card`  | `board_id: int, stack_id: int, card_id: int, label_id: int`                                                     | `Dict`             |
 | `assign_user_to_card`     | `board_id: int, stack_id: int, card_id: int, user_id: str`                                                      | `Dict`             |
 | `unassign_user_from_card` | `board_id: int, stack_id: int, card_id: int, user_id: str`                                                      | `Dict`             |
-| `get_assigned_cards`      | `user_id?: str, board_ids?: list[int], done?: bool`                                                             | `List[CardResult]` | <!-- decision 015; done is a filter predicate (truthy match on card.done datetime), not a value to write --> |
+| `get_assigned_cards`      | `user_id?: str, board_ids?: list[int], done?: bool`                                                             | `AssignedCards`     | <!-- decision 015; done is a filter predicate (truthy match on card.done datetime), not a value to write --> |
 
 ## Nextcloud Deck API
 
@@ -64,6 +64,7 @@ class CardResult(DeckBaseModel):
 - `Card.done` type changes from `str | bool | None` to `str | None` — it's an ISO-8601 datetime, not a boolean (decision 016)
 - `Assignment` matches the actual Deck API response shape (`assignUser` endpoint returns `{ id, participant: Owner, cardId, type }`)
 - `CardResult` is a read-only view model for `get_assigned_cards` — enriches cards with board/stack context
+- `AssignedCards` (`cards: list[CardResult]`, `skipped_boards: list[SkippedBoard]`) is the `get_assigned_cards` return type; `SkippedBoard` is `{board_id, reason}` for boards answering 403/404 (decision 018)
 
 ## Exception Hierarchy
 
@@ -71,8 +72,9 @@ All exceptions live in `client.py`.
 
 ```text
 DeckAPIError(Exception)           # Base — all Deck API errors
-├── DeckHTTPError(DeckAPIError)   # HTTP status errors (has .status_code, .body)
-└── DeckConnectionError(DeckAPIError)  # Network / timeout errors
+├── DeckHTTPError(DeckAPIError)   # HTTP status errors (has .status_code, .body; message includes Deck's "message" field, decision 018)
+├── DeckConnectionError(DeckAPIError)  # Network / timeout errors
+└── DeckResponseError(DeckAPIError)    # 2xx response with a non-JSON body
 ```
 
 ## Config Contract
@@ -87,9 +89,10 @@ class DeckConfig:
     nc_app_password: str  # Required.
     nc_api_version: str  # Default "v1.1"
     request_timeout: float  # Default 30.0 seconds.
+    max_retries: int  # Default 2; transient GET failures only (decision 018).
 ```
 
-Loaded from environment variables: `NC_URL`, `NC_USER`, `NC_APP_PASSWORD`, `NC_API_VERSION`, `MCP_REQUEST_TIMEOUT`.
+Loaded from environment variables: `NC_URL`, `NC_USER`, `NC_APP_PASSWORD`, `NC_API_VERSION`, `MCP_REQUEST_TIMEOUT`, `MCP_MAX_RETRIES`.
 Validated at startup in the lifespan hook — raises `ValueError` immediately if required vars are missing.
 
 ## Module Dependency Graph
