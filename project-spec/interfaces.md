@@ -94,8 +94,8 @@ class DeckConfig:
     request_timeout: float  # Default 30.0 seconds.
     max_retries: int  # Default 2; transient GET failures only (decision 018).
     read_only: bool  # Default False; hides and blocks write tools (decision 018).
-    tool_timeout: float  # Default 120.0 seconds; overall deadline per tool call (decision 019).
-    enabled_tools: frozenset[str] | None  # Default None (all tools); allowlist (decision 019).
+    tool_timeout: float  # Default 120.0 s; per-tool-call deadline (decision 019).
+    enabled_tools: frozenset[str] | None  # Default None: all tools (decision 019).
 ```
 
 Loaded from environment variables: `NC_URL`, `NC_USER`, `NC_APP_PASSWORD`, `NC_API_VERSION`, `MCP_REQUEST_TIMEOUT`, `MCP_MAX_RETRIES`, `MCP_READ_ONLY`, `MCP_TOOL_TIMEOUT`, `MCP_ENABLED_TOOLS`, `NC_ALLOW_INSECURE_HTTP` (not stored on the config; only relaxes the https rule).
