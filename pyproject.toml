@@ -44,3 +44,7 @@ markers = [
     "integration: requires live Nextcloud instance",
     "slow: timing/performance tests",
 ]
+
+[tool.uv]
+# mcp 2.x removes the mcp.server.fastmcp module this server imports.
+constraint-dependencies = ["mcp>=1.28.1,<2"]
