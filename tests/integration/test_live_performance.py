@@ -88,14 +88,14 @@ async def test_live_read_performance_is_measured_without_identifiers(
         lambda: server.get_assigned_cards(board_ids=[board_id]),
     )
     timings.append((label, elapsed_ms))
-    assert isinstance(scoped_assigned_cards, list)
+    assert isinstance(scoped_assigned_cards.cards, list)
 
     label, elapsed_ms, unscoped_assigned_cards = await _measure(
         "get_assigned_cards_unscoped",
         server.get_assigned_cards,
     )
     timings.append((label, elapsed_ms))
-    assert isinstance(unscoped_assigned_cards, list)
+    assert isinstance(unscoped_assigned_cards.cards, list)
 
     concurrent_start = time.perf_counter()
     await asyncio.gather(server.list_boards(), server.list_stacks(board_id))
