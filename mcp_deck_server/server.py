@@ -58,15 +58,15 @@ _COMPACT_DESCRIPTION = (
 logger = logging.getLogger(__name__)
 audit_logger = logging.getLogger(f"{__name__}.audit")
 
-_READ_ONLY = ToolAnnotations(readOnlyHint=True)
+_READ_ONLY = ToolAnnotations(read_only_hint=True)
 _CREATE = ToolAnnotations(
-    readOnlyHint=False, destructiveHint=False, idempotentHint=False
+    read_only_hint=False, destructive_hint=False, idempotent_hint=False
 )
 _ADDITIVE = ToolAnnotations(
-    readOnlyHint=False, destructiveHint=False, idempotentHint=True
+    read_only_hint=False, destructive_hint=False, idempotent_hint=True
 )
 _DESTRUCTIVE = ToolAnnotations(
-    readOnlyHint=False, destructiveHint=True, idempotentHint=True
+    read_only_hint=False, destructive_hint=True, idempotent_hint=True
 )
 
 _TOOL_NAMES: set[str] = set()

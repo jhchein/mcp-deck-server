@@ -41,7 +41,7 @@ async def test_no_tool_advertises_an_output_schema() -> None:
     tools = await server.mcp.list_tools()
 
     assert tools
-    assert [tool.name for tool in tools if tool.outputSchema is not None] == []
+    assert [tool.name for tool in tools if tool.output_schema is not None] == []
 
 
 @pytest.mark.asyncio

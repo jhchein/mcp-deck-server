@@ -67,7 +67,7 @@ async def test_every_tool_declares_annotations() -> None:
     assert set(tools) == WRITE_TOOLS | READ_TOOLS
     for name, tool in tools.items():
         assert tool.annotations is not None, name
-        assert tool.annotations.readOnlyHint is (name in READ_TOOLS), name
+        assert tool.annotations.read_only_hint is (name in READ_TOOLS), name
 
 
 @pytest.mark.asyncio
@@ -75,11 +75,11 @@ async def test_destructive_and_idempotent_hints_match_behaviour() -> None:
     tools = {tool.name: tool.annotations for tool in await server.mcp.list_tools()}
 
     assert tools["create_card"] is not None
-    assert tools["create_card"].idempotentHint is False
-    assert tools["create_card"].destructiveHint is False
+    assert tools["create_card"].idempotent_hint is False
+    assert tools["create_card"].destructive_hint is False
     for name in ("update_card", "remove_label_from_card", "unassign_user_from_card"):
         assert tools[name] is not None
-        assert tools[name].destructiveHint is True, name
+        assert tools[name].destructive_hint is True, name
 
 
 @pytest.mark.asyncio
@@ -203,10 +203,10 @@ async def test_writes_emit_audit_line_without_content(
 async def test_title_and_description_schemas_declare_length_caps() -> None:
     tools = {tool.name: tool for tool in await server.mcp.list_tools()}
 
-    create_props = tools["create_card"].inputSchema["properties"]
+    create_props = tools["create_card"].input_schema["properties"]
     assert create_props["title"]["maxLength"] == server.MAX_TITLE_LENGTH
     assert create_props["description"]["maxLength"] == server.MAX_DESCRIPTION_LENGTH
-    update_props = tools["update_card"].inputSchema["properties"]
+    update_props = tools["update_card"].input_schema["properties"]
     assert update_props["title"]["anyOf"][0]["maxLength"] == server.MAX_TITLE_LENGTH
 
 
