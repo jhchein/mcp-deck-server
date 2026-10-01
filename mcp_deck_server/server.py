@@ -11,8 +11,8 @@ from datetime import datetime
 from typing import Annotated, Any
 
 import httpx
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
@@ -100,18 +100,29 @@ def create_http_client(config: DeckConfig) -> httpx.AsyncClient:
     )
 
 
+# MCPServer.get_context() is gone in mcp 2.x and the tools take no ctx
+# parameter, so the lifespan publishes its runtime here. The server is a
+# process-wide singleton, so there is at most one active runtime.
+_active_runtime: DeckRuntime | None = None
+
+
 @asynccontextmanager
-async def deck_lifespan(app: FastMCP):
+async def deck_lifespan(app: MCPServer):
+    global _active_runtime
     config = load_config()
     _apply_tool_policy(app, config)
     client = create_http_client(config)
+    previous = _active_runtime
+    runtime = DeckRuntime(config=config, client=client)
+    _active_runtime = runtime
     try:
-        yield DeckRuntime(config=config, client=client)
+        yield runtime
     finally:
+        _active_runtime = previous
         await client.aclose()
 
 
-mcp = FastMCP("deck", lifespan=deck_lifespan)
+mcp = MCPServer("deck", lifespan=deck_lifespan)
 
 
 def _instrument(function: Callable[..., Awaitable[Any]]) -> Any:
@@ -161,7 +172,7 @@ def _register_tool[F: Callable[..., Any]](
     _TOOL_NAMES.add(function.__name__)
     if writes:
         _WRITE_TOOL_NAMES.add(function.__name__)
-    # Without structured output FastMCP omits the outputSchema and the duplicate
+    # Without structured output MCPServer omits the outputSchema and the duplicate
     # structuredContent; clients still receive the JSON text content.
     mcp.tool(annotations=annotations, structured_output=False)(_instrument(function))
     return function
@@ -197,7 +208,7 @@ def disabled_tools(config: DeckConfig) -> set[str]:
     return disabled
 
 
-def _apply_tool_policy(app: FastMCP, config: DeckConfig) -> None:
+def _apply_tool_policy(app: MCPServer, config: DeckConfig) -> None:
     disabled = disabled_tools(config)
     for name in sorted(disabled):
         with suppress(ToolError):
@@ -273,11 +284,9 @@ def _mutation_result(result: Any) -> dict[str, Any]:
 
 
 def get_runtime() -> DeckRuntime:
-    context = mcp.get_context()
-    runtime = context.request_context.lifespan_context
-    if not isinstance(runtime, DeckRuntime):
-        raise ValueError("Lifespan context is unavailable")
-    return runtime
+    if _active_runtime is None:
+        raise ValueError("Deck runtime is unavailable outside the server lifespan")
+    return _active_runtime
 
 
 def _card_is_assigned_to_user(card: Card, user_id: str) -> bool:

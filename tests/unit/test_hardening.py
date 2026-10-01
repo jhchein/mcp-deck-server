@@ -7,7 +7,7 @@ from collections.abc import Iterator
 import httpx
 import pytest
 import respx
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ToolError
 
 from mcp_deck_server import server
 from mcp_deck_server.server import DeckRuntime
