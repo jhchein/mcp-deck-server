@@ -16,7 +16,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from .client import DeckHTTPError, DeckTimeoutError, make_nc_request
+from .client import DeckAPIError, DeckHTTPError, make_nc_request
 from .config import DeckConfig, load_config
 from .models import (
     AssignedCards,
@@ -132,6 +132,12 @@ def _instrument(function: Callable[..., Awaitable[Any]]) -> Any:
     minutes when Deck is slow; the agent would rather get a clear error. The
     log line carries the tool name, outcome and duration only, never arguments
     or results.
+
+    mcp 2.x forwards only ``ToolError`` messages to the client and masks every
+    other exception as "Error executing tool <name>". Deck API errors and
+    validation ``ValueError`` messages are written for the agent (status, hint,
+    what to change), so they are re-raised as ``ToolError``. Unexpected
+    exceptions stay masked.
     """
 
     @functools.wraps(function)
@@ -148,10 +154,13 @@ def _instrument(function: Callable[..., Awaitable[Any]]) -> Any:
                 outcome = "error:TimeoutError"
                 raise
             outcome = "timeout"
-            raise DeckTimeoutError(
+            raise ToolError(
                 f"{function.__name__} exceeded the {timeout:g} s tool deadline "
                 "(MCP_TOOL_TIMEOUT)"
             ) from error
+        except (DeckAPIError, ValueError) as error:
+            outcome = f"error:{type(error).__name__}"
+            raise ToolError(str(error)) from error
         except BaseException as error:
             outcome = f"error:{type(error).__name__}"
             raise

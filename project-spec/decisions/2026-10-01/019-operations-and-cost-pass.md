@@ -17,7 +17,7 @@ A second review after decision 018 found the code sound but the operating model 
 
 ### Phase 1 — Resilience and security
 
-- **Overall tool deadline.** Every tool runs under `asyncio.timeout(MCP_TOOL_TIMEOUT)` (default 120 s). Expiry raises `DeckTimeoutError` naming the tool and the setting. The check distinguishes the deadline from a `TimeoutError` raised inside the call.
+- **Overall tool deadline.** Every tool runs under `asyncio.timeout(MCP_TOOL_TIMEOUT)` (default 120 s). Expiry raises a `ToolError` naming the tool and the setting. The check distinguishes the deadline from a `TimeoutError` raised inside the call.
 - **Separate connect timeout.** Connecting is capped at 10 s (or `MCP_REQUEST_TIMEOUT` if smaller). A dead host fails fast instead of consuming the full request timeout.
 - **Jittered backoff and `Retry-After` dates.** Backoff waits 50–100 % of `0.5 · 2^attempt`. `Retry-After` is honoured as seconds or HTTP date, capped at 5 s.
 - **Actionable errors.** HTTP 401 adds `check NC_USER and NC_APP_PASSWORD`. `DeckConnectionError` names the exception class (`ConnectTimeout`, `ConnectError`) but never its text, which can embed URLs.

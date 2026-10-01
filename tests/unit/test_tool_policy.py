@@ -10,7 +10,6 @@ import respx
 from mcp.server.mcpserver.exceptions import ToolError
 
 from mcp_deck_server import server
-from mcp_deck_server.client import DeckTimeoutError
 from mcp_deck_server.server import DeckRuntime
 from tests.unit.test_hardening import READ_TOOLS, WRITE_TOOLS
 
@@ -116,7 +115,7 @@ async def test_tool_deadline_stops_slow_calls(
 
 
 @pytest.mark.asyncio
-async def test_tool_deadline_error_type(
+async def test_tool_deadline_error_is_a_tool_error(
     monkeypatch: pytest.MonkeyPatch, test_client: httpx.AsyncClient, test_config
 ) -> None:
     quick = DeckRuntime(
@@ -133,7 +132,7 @@ async def test_tool_deadline_error_type(
 
     with respx.mock(assert_all_called=False) as router:
         router.route(method="GET").mock(side_effect=slow)
-        with pytest.raises(DeckTimeoutError):
+        with pytest.raises(ToolError, match="exceeded"):
             await tool.fn()
 
 
