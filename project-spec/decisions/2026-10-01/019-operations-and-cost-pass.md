@@ -38,7 +38,7 @@ A second review after decision 018 found the code sound but the operating model 
 - A weekly scheduled run also executes the live integration tests when the repository has the secrets configured.
 - Dependabot groups updates (one PR per ecosystem and week) and covers GitHub Actions.
 - The package gets a build system and a `mcp-deck-server` entry point, so `uvx --from git+<repo> mcp-deck-server` works.
-- Each tool call logs one structured line on stderr (tool, outcome, duration); each HTTP request logs method, status, duration and retry count. Never content or credentials.
+- Each tool call logs one structured line on stderr (tool, outcome, duration), and each retried GET logs a warning with method, path, reason and wait. httpx already logs one line per request. Never content or credentials.
 - An automated stdio protocol test starts the server as a subprocess and checks the advertised tools for default, read-only and allowlist configurations.
 - `SECURITY.md` describes private reporting.
 

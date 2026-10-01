@@ -184,8 +184,8 @@ PR 2 — token cost:
 
 PR 3 — CI and operations:
 
-- [ ] Pin Actions, `permissions`, `--locked`, path-aware audit gate, weekly run, Dependabot groups
-- [ ] Entry point, structured logging, stdio protocol test, `SECURITY.md`
+- [x] Pin Actions, `permissions`, `--locked`, path-aware audit gate, weekly run, Dependabot groups
+- [x] Entry point, structured logging, stdio protocol test, `SECURITY.md`
 
 PR 4 — code structure:
 

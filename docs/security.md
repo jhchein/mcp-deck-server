@@ -16,7 +16,7 @@ We found no blocking security issue for the current local-only deployment. The m
 | SSRF | Low | Tool parameters only control path segments under the configured Deck API base URL. Clients cannot choose arbitrary hosts through tool calls. | Keep the remote host config-only. Do not add tools that accept full URLs without a separate review. |
 | Transport boundary | Low | `main.py` hardcodes stdio transport. There is no network listener in the server. | Treat the local MCP host and any connected agent as trusted process-level callers. |
 | Error information exposure | Low | `DeckHTTPError` exposes the status and, when the body is JSON, Deck's `message` field (whitespace-collapsed, truncated to 300 characters). HTML or other bodies are never echoed. `DeckConnectionError` now returns a generic connection-failure message instead of low-level request details. | Keep low-level connection details out of MCP-visible exceptions. |
-| Dependency audit | Low | `uv.lock` is committed, CI runs `uv audit`, and the current audit reports no known vulnerabilities. | Keep the audit job required on protected branches. |
+| Dependency audit | Low | `uv.lock` is committed, CI runs `uv audit --locked` on every PR, on `main` and weekly, and Dependabot groups security updates into one PR. Pull requests that change dependencies cannot pass with a known advisory. | Keep the audit job required on protected branches. Relock promptly when the weekly run fails. |
 
 ## Threat model
 
