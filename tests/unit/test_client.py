@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+from datetime import UTC, datetime, timedelta
+from email.utils import format_datetime
 
 import httpx
 import pytest
@@ -101,7 +103,7 @@ async def test_make_nc_request_connection_error_redacts_request_details(
         with pytest.raises(DeckConnectionError) as error:
             await make_nc_request(test_client, test_config, "GET", "/boards")
 
-    assert str(error.value) == "Deck API connection error"
+    assert str(error.value) == "Deck API connection error (ConnectError)"
     assert test_config.nc_url not in str(error.value)
     assert "/private" not in str(error.value)
 
@@ -246,7 +248,10 @@ async def test_get_retries_transient_status_then_succeeds(
 
     assert response == []
     assert route.call_count == 3
-    assert sleeps == [0.5, 1.0]
+    # Exponential backoff with jitter: each wait is 50-100% of 0.5 * 2**attempt.
+    assert len(sleeps) == 2
+    assert 0.25 <= sleeps[0] <= 0.5
+    assert 0.5 <= sleeps[1] <= 1.0
 
 
 @pytest.mark.asyncio
@@ -345,3 +350,40 @@ async def test_writes_are_never_retried(
 
     assert route.call_count == 1
     assert sleeps == []
+
+
+@pytest.mark.asyncio
+async def test_get_retry_honours_retry_after_http_date(
+    test_client: httpx.AsyncClient, test_config, sleeps: list[float]
+) -> None:
+    config = dataclasses.replace(test_config, max_retries=1)
+    when = datetime.now(UTC) + timedelta(seconds=3, milliseconds=500)
+    with respx.mock(assert_all_called=True) as router:
+        router.route(method="GET", url=_boards_url(config)).mock(
+            side_effect=[
+                httpx.Response(
+                    429, headers={"Retry-After": format_datetime(when, usegmt=True)}
+                ),
+                httpx.Response(200, json=[]),
+            ]
+        )
+        await make_nc_request(test_client, config, "GET", "/boards")
+
+    assert len(sleeps) == 1
+    assert 1.0 <= sleeps[0] <= client_module.RETRY_MAX_DELAY_SECONDS
+
+
+@pytest.mark.parametrize("header", ["", "soon", "-5", "Wed, 21 Oct 2015 07:28:00"])
+def test_unusable_retry_after_falls_back_to_backoff(header: str) -> None:
+    response = httpx.Response(503, headers={"Retry-After": header})
+
+    delay = client_module._retry_delay(0, response)
+
+    assert 0.25 <= delay <= 0.5
+
+
+def test_unauthorized_error_points_at_credentials() -> None:
+    message = str(DeckHTTPError(401, ""))
+
+    assert message.startswith("Deck API HTTP error 401")
+    assert "NC_APP_PASSWORD" in message

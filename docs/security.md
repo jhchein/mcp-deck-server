@@ -12,11 +12,25 @@ We found no blocking security issue for the current local-only deployment. The m
 | Nextcloud app password scope | Medium | Nextcloud documents device-specific passwords as client credentials that can be revoked individually. They are not Deck-only tokens. | Use a dedicated low-privilege Nextcloud user for the MCP server when possible. |
 | Input validation | Low | Tool path parameters are typed as `int` in the MCP schema. Text fields are sent in JSON payloads, not interpolated into URLs. Card titles (255 characters) and descriptions (100,000 characters) are length-capped in the tool schema. | Keep numeric IDs typed as integers. Add tests if new string path parameters are introduced. |
 | Base URL validation | Low | `NC_URL` is validated as an absolute URL with a host, and query or fragment components are rejected. Plain `http` is accepted only for loopback hosts unless `NC_ALLOW_INSECURE_HTTP=true`. `NC_API_VERSION` must match `v<major>[.<minor>]` because it is part of the request path. | Keep this validation in place for any future config-loading changes. |
-| Prompt injection and write access | Medium | Card titles and descriptions are untrusted text the agent reads and can then act on with write tools. The app password cannot be scoped to Deck. | Set `MCP_READ_ONLY=true` unless the agent needs to write. Tools carry MCP annotations so clients can confirm risky calls, and write tools log an audit line (tool name and IDs, never content) to stderr. |
+| Prompt injection and write access | Medium (Low on boards only you write to) | Card titles and descriptions are untrusted text the agent reads and can then act on with write tools. The app password cannot be scoped to Deck. See [Threat model](#threat-model). | Share only the boards the agent needs, set `MCP_READ_ONLY=true` or list the needed tools in `MCP_ENABLED_TOOLS` when others can write to those boards. Tools carry MCP annotations so clients can confirm risky calls, and write tools log an audit line (tool name and IDs, never content) to stderr. |
 | SSRF | Low | Tool parameters only control path segments under the configured Deck API base URL. Clients cannot choose arbitrary hosts through tool calls. | Keep the remote host config-only. Do not add tools that accept full URLs without a separate review. |
 | Transport boundary | Low | `main.py` hardcodes stdio transport. There is no network listener in the server. | Treat the local MCP host and any connected agent as trusted process-level callers. |
 | Error information exposure | Low | `DeckHTTPError` exposes the status and, when the body is JSON, Deck's `message` field (whitespace-collapsed, truncated to 300 characters). HTML or other bodies are never echoed. `DeckConnectionError` now returns a generic connection-failure message instead of low-level request details. | Keep low-level connection details out of MCP-visible exceptions. |
 | Dependency audit | Low | `uv.lock` is committed, CI runs `uv audit`, and the current audit reports no known vulnerabilities. | Keep the audit job required on protected branches. |
+
+## Threat model
+
+The server acts with one person's Nextcloud account on behalf of an agent. The agent is trusted. The risk is **indirect prompt injection**: text on a board that someone else wrote (a shared board, an e-mail-to-card integration, a public form) can contain instructions, and the agent may follow them with the tools it has.
+
+What an injected instruction can do is bounded by the tool set. There is no delete tool. `update_card` can overwrite a title or description, `archive_card` hides a card, and the label and assignee tools change metadata. Reading is limited to what the account can already see.
+
+| Situation | Risk | What to do |
+| --- | --- | --- |
+| Boards only you write to | Practically none | Nothing beyond the defaults. |
+| Boards others can write to, agent only reads | Low | `MCP_READ_ONLY=true`. |
+| Boards others can write to, agent also writes | Medium | List only the tools the agent needs in `MCP_ENABLED_TOOLS`, keep client-side confirmation on for write tools, and use a dedicated Nextcloud user (below). |
+
+The defaults stay permissive on purpose: all tools are on, so the server is useful out of the box. `MCP_READ_ONLY` and `MCP_ENABLED_TOOLS` are opt-in controls. They are policies of this server, not of Nextcloud. Only the account's board shares enforce permissions on the Nextcloud side, which is why a dedicated user with read-only shares is the one control that holds even if the server or the agent misbehaves.
 
 ## Evidence
 
@@ -44,6 +58,7 @@ We do not need to block current use on these items. They should be handled as no
 | Done | Redact `DeckConnectionError` messages. | Maintainer | MCP clients receive actionable connection failures without full low-level request details. |
 | Done | Document dedicated-user setup guidance. | Maintainer | Users understand that the app password should belong to a least-privilege Nextcloud account where possible. |
 | Done | Add `MCP_READ_ONLY`, tool annotations and write audit logging (decision 018). | Maintainer | Agents that only need to read cannot change boards, and clients can prompt before risky writes. |
+| Done | Add `MCP_ENABLED_TOOLS` allowlist and document the threat model (decision 019). | Maintainer | Agents on shared boards can be limited to the tools they need without making the default setup restrictive. |
 | Done | Require `https` for non-loopback `NC_URL` and validate `NC_API_VERSION` (decision 018). | Maintainer | Credentials are not sent in clear text by accident. |
 
 ## Current position

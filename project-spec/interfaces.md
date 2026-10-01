@@ -75,8 +75,9 @@ All exceptions live in `client.py`.
 ```text
 DeckAPIError(Exception)           # Base — all Deck API errors
 ├── DeckHTTPError(DeckAPIError)   # HTTP status errors (has .status_code, .body; message includes Deck's "message" field, decision 018)
-├── DeckConnectionError(DeckAPIError)  # Network / timeout errors
-└── DeckResponseError(DeckAPIError)    # 2xx response with a non-JSON body
+├── DeckConnectionError(DeckAPIError)  # Network / timeout errors; message names the exception class (decision 019)
+├── DeckResponseError(DeckAPIError)    # 2xx response with a non-JSON body
+└── DeckTimeoutError(DeckAPIError)     # Tool call exceeded MCP_TOOL_TIMEOUT (decision 019)
 ```
 
 ## Config Contract
@@ -93,9 +94,11 @@ class DeckConfig:
     request_timeout: float  # Default 30.0 seconds.
     max_retries: int  # Default 2; transient GET failures only (decision 018).
     read_only: bool  # Default False; hides and blocks write tools (decision 018).
+    tool_timeout: float  # Default 120.0 s; per-tool-call deadline (decision 019).
+    enabled_tools: frozenset[str] | None  # Default None: all tools (decision 019).
 ```
 
-Loaded from environment variables: `NC_URL`, `NC_USER`, `NC_APP_PASSWORD`, `NC_API_VERSION`, `MCP_REQUEST_TIMEOUT`, `MCP_MAX_RETRIES`, `MCP_READ_ONLY`, `NC_ALLOW_INSECURE_HTTP` (not stored on the config; only relaxes the https rule).
+Loaded from environment variables: `NC_URL`, `NC_USER`, `NC_APP_PASSWORD`, `NC_API_VERSION`, `MCP_REQUEST_TIMEOUT`, `MCP_MAX_RETRIES`, `MCP_READ_ONLY`, `MCP_TOOL_TIMEOUT`, `MCP_ENABLED_TOOLS`, `NC_ALLOW_INSECURE_HTTP` (not stored on the config; only relaxes the https rule).
 Validated at startup in the lifespan hook — raises `ValueError` immediately if required vars are missing.
 
 ## Module Dependency Graph

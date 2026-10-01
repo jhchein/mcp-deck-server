@@ -17,6 +17,8 @@ class DeckConfig:
     request_timeout: float = 30.0
     max_retries: int = 2
     read_only: bool = False
+    tool_timeout: float = 120.0
+    enabled_tools: frozenset[str] | None = None
 
 
 MAX_RETRIES_LIMIT = 5
@@ -35,6 +37,27 @@ def _parse_bool_env(name: str) -> bool:
     raise ValueError(f"{name} must be one of: true, false, 1, 0, yes, no, on, off")
 
 
+def _parse_positive_float_env(name: str, default: str) -> float:
+    raw = os.getenv(name, default).strip() or default
+    try:
+        value = float(raw)
+    except ValueError as error:
+        raise ValueError(f"{name} must be a valid number") from error
+    if value <= 0:
+        raise ValueError(f"{name} must be greater than 0")
+    return value
+
+
+def _parse_enabled_tools_env() -> frozenset[str] | None:
+    """Parse MCP_ENABLED_TOOLS; unset or blank means every tool is enabled."""
+    names = {
+        name.strip()
+        for name in os.getenv("MCP_ENABLED_TOOLS", "").split(",")
+        if name.strip()
+    }
+    return frozenset(names) if names else None
+
+
 def load_config() -> DeckConfig:
     load_dotenv()
 
@@ -42,7 +65,6 @@ def load_config() -> DeckConfig:
     nc_user = os.getenv("NC_USER", "").strip()
     nc_app_password = os.getenv("NC_APP_PASSWORD", "").strip()
     nc_api_version = os.getenv("NC_API_VERSION", "v1.1").strip() or "v1.1"
-    request_timeout_raw = os.getenv("MCP_REQUEST_TIMEOUT", "30.0").strip() or "30.0"
 
     if not nc_url:
         raise ValueError("NC_URL is required")
@@ -67,13 +89,8 @@ def load_config() -> DeckConfig:
     if not nc_app_password:
         raise ValueError("NC_APP_PASSWORD is required")
 
-    try:
-        request_timeout = float(request_timeout_raw)
-    except ValueError as error:
-        raise ValueError("MCP_REQUEST_TIMEOUT must be a valid number") from error
-
-    if request_timeout <= 0:
-        raise ValueError("MCP_REQUEST_TIMEOUT must be greater than 0")
+    request_timeout = _parse_positive_float_env("MCP_REQUEST_TIMEOUT", "30.0")
+    tool_timeout = _parse_positive_float_env("MCP_TOOL_TIMEOUT", "120.0")
 
     max_retries_raw = os.getenv("MCP_MAX_RETRIES", "2").strip() or "2"
     try:
@@ -91,4 +108,6 @@ def load_config() -> DeckConfig:
         request_timeout=request_timeout,
         max_retries=max_retries,
         read_only=_parse_bool_env("MCP_READ_ONLY"),
+        tool_timeout=tool_timeout,
+        enabled_tools=_parse_enabled_tools_env(),
     )

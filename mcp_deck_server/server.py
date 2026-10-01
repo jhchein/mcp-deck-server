@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Annotated, Any, TypeVar
+from typing import Annotated, Any
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -14,7 +15,7 @@ from mcp.server.fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from .client import DeckHTTPError, make_nc_request
+from .client import DeckHTTPError, DeckTimeoutError, make_nc_request
 from .config import DeckConfig, load_config
 from .models import (
     AssignedCards,
@@ -39,12 +40,15 @@ MAX_DESCRIPTION_LENGTH = 100_000
 # Upper bound on simultaneous Deck requests during a cross-board search.
 MAX_CONCURRENT_BOARD_REQUESTS = 5
 
+# A dead host should fail fast instead of consuming the whole request timeout.
+CONNECT_TIMEOUT_SECONDS = 10.0
+
 _COMPACT_DESCRIPTION = (
     "Return slim card summaries (id, title, stackId, duedate, done, archived, "
     "label titles, assignee user IDs) instead of full cards. Use get_card for "
     "the description and other details."
 )
-F = TypeVar("F", bound=Callable[..., Any])
+
 
 logger = logging.getLogger(__name__)
 audit_logger = logging.getLogger(f"{__name__}.audit")
@@ -60,6 +64,7 @@ _DESTRUCTIVE = ToolAnnotations(
     readOnlyHint=False, destructiveHint=True, idempotentHint=True
 )
 
+_TOOL_NAMES: set[str] = set()
 _WRITE_TOOL_NAMES: set[str] = set()
 
 
@@ -69,13 +74,12 @@ class DeckRuntime:
     client: httpx.AsyncClient
 
 
-@asynccontextmanager
-async def deck_lifespan(app: FastMCP):
-    config = load_config()
-    if config.read_only:
-        _hide_write_tools(app)
-    client = httpx.AsyncClient(
-        timeout=config.request_timeout,
+def create_http_client(config: DeckConfig) -> httpx.AsyncClient:
+    return httpx.AsyncClient(
+        timeout=httpx.Timeout(
+            config.request_timeout,
+            connect=min(CONNECT_TIMEOUT_SECONDS, config.request_timeout),
+        ),
         auth=(config.nc_user, config.nc_app_password),
         headers={
             "OCS-APIRequest": "true",
@@ -83,6 +87,13 @@ async def deck_lifespan(app: FastMCP):
             "Accept": "application/json",
         },
     )
+
+
+@asynccontextmanager
+async def deck_lifespan(app: FastMCP):
+    config = load_config()
+    _apply_tool_policy(app, config)
+    client = create_http_client(config)
     try:
         yield DeckRuntime(config=config, client=client)
     finally:
@@ -92,22 +103,78 @@ async def deck_lifespan(app: FastMCP):
 mcp = FastMCP("deck", lifespan=deck_lifespan)
 
 
-def _write_tool(annotations: ToolAnnotations) -> Callable[[F], F]:
-    """Register a state-changing tool so read-only mode can remove it."""
+def _with_deadline(function: Callable[..., Awaitable[Any]]) -> Any:
+    """Bound a tool call by MCP_TOOL_TIMEOUT, retries and board fan-out included.
 
-    def register(function: F) -> F:
+    The per-request timeout alone allows a multi-board search to run for
+    minutes when Deck is slow; the agent would rather get a clear error.
+    """
+
+    @functools.wraps(function)
+    async def run(*args: Any, **kwargs: Any) -> Any:
+        timeout = get_runtime().config.tool_timeout
+        deadline = asyncio.timeout(timeout)
+        try:
+            async with deadline:
+                return await function(*args, **kwargs)
+        except TimeoutError as error:
+            if not deadline.expired():
+                raise
+            raise DeckTimeoutError(
+                f"{function.__name__} exceeded the {timeout:g} s tool deadline "
+                "(MCP_TOOL_TIMEOUT)"
+            ) from error
+
+    return run
+
+
+def _register_tool[F: Callable[..., Any]](
+    function: F, annotations: ToolAnnotations, *, writes: bool
+) -> F:
+    _TOOL_NAMES.add(function.__name__)
+    if writes:
         _WRITE_TOOL_NAMES.add(function.__name__)
-        mcp.tool(annotations=annotations)(function)
-        return function
-
-    return register
+    mcp.tool(annotations=annotations)(_with_deadline(function))
+    return function
 
 
-def _hide_write_tools(app: FastMCP) -> None:
-    for name in sorted(_WRITE_TOOL_NAMES):
+def _read_tool[F: Callable[..., Any]](
+    annotations: ToolAnnotations = _READ_ONLY,
+) -> Callable[[F], F]:
+    """Register a tool that only reads from Deck."""
+    return lambda function: _register_tool(function, annotations, writes=False)
+
+
+def _write_tool[F: Callable[..., Any]](
+    annotations: ToolAnnotations,
+) -> Callable[[F], F]:
+    """Register a state-changing tool so the tool policy can remove it."""
+    return lambda function: _register_tool(function, annotations, writes=True)
+
+
+def disabled_tools(config: DeckConfig) -> set[str]:
+    """Return the tools that MCP_READ_ONLY and MCP_ENABLED_TOOLS rule out."""
+    enabled = config.enabled_tools
+    if enabled is not None and (unknown := enabled - _TOOL_NAMES):
+        raise ValueError(
+            f"MCP_ENABLED_TOOLS lists unknown tools: {sorted(unknown)}. "
+            f"Available tools: {sorted(_TOOL_NAMES)}"
+        )
+    disabled: set[str] = set()
+    if config.read_only:
+        disabled |= _WRITE_TOOL_NAMES
+    if enabled is not None:
+        disabled |= _TOOL_NAMES - enabled
+    return disabled
+
+
+def _apply_tool_policy(app: FastMCP, config: DeckConfig) -> None:
+    disabled = disabled_tools(config)
+    for name in sorted(disabled):
         with suppress(ToolError):
             app.remove_tool(name)
-    logger.info("Read-only mode: write tools are disabled")
+    if disabled:
+        logger.info("Tool policy disabled: %s", ", ".join(sorted(disabled)))
 
 
 def _authorize_write(runtime: DeckRuntime, tool: str, **ids: object) -> None:
@@ -118,6 +185,9 @@ def _authorize_write(runtime: DeckRuntime, tool: str, **ids: object) -> None:
     """
     if runtime.config.read_only:
         raise ValueError(f"{tool} is disabled because MCP_READ_ONLY is set")
+    enabled = runtime.config.enabled_tools
+    if enabled is not None and tool not in enabled:
+        raise ValueError(f"{tool} is not listed in MCP_ENABLED_TOOLS")
     audit_logger.info(
         "write tool=%s %s", tool, " ".join(f"{k}={v}" for k, v in ids.items())
     )
@@ -189,7 +259,7 @@ def _card_matches_done_filter(card: Card, done: bool | None) -> bool:
     return (card.done is not None) is done
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@_read_tool()
 async def list_boards() -> list[Board]:
     """List all boards the authenticated user can access.
 
@@ -201,7 +271,7 @@ async def list_boards() -> list[Board]:
     return [Board.model_validate(board) for board in response]
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@_read_tool()
 async def get_board(board_id: int) -> Board:
     """Get full details for a single board, including labels and ACL data.
 
@@ -217,7 +287,7 @@ async def get_board(board_id: int) -> Board:
     return Board.model_validate(response)
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@_read_tool()
 async def list_stacks(board_id: int) -> list[Stack]:
     """List all stacks on a board.
 
@@ -234,7 +304,7 @@ async def list_stacks(board_id: int) -> list[Stack]:
     return [Stack.model_validate(stack) for stack in response]
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@_read_tool()
 async def list_cards(
     board_id: int,
     stack_id: int,
@@ -318,7 +388,7 @@ async def _collect_board_cards(
     return results, None
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@_read_tool()
 async def get_assigned_cards(
     user_id: Annotated[
         str | None,
@@ -432,7 +502,7 @@ async def create_card(
     return Card.model_validate(response)
 
 
-@mcp.tool(annotations=_READ_ONLY)
+@_read_tool()
 async def get_card(board_id: int, stack_id: int, card_id: int) -> Card:
     """Get full details for a single card.
 
