@@ -6,7 +6,7 @@ Contracts only — signatures, schemas, auth claims. Not implementation.
 
 All tools are async, registered via `@mcp.tool()` on the `FastMCP("deck")` instance in `server.py`.
 Tools access the shared httpx client and config via the FastMCP lifespan context.
-Tools call `make_nc_request` directly — never other tool functions (tool independence convention).
+Tools call `runtime.request` (a thin wrapper over `make_nc_request`) directly — never other tool functions (tool independence convention).
 Tool docstrings and `Annotated[..., Field(description=...)]` parameter hints are part of the agent-facing MCP schema contract (decision 017).
 
 | Tool                      | Parameters                                                                                                      | Returns            |
