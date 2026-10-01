@@ -71,10 +71,6 @@ class DeckResponseError(DeckAPIError):
     """The Deck API answered successfully but with an unusable body."""
 
 
-class DeckTimeoutError(DeckAPIError):
-    """A tool call ran past its overall deadline (MCP_TOOL_TIMEOUT)."""
-
-
 def _connection_message(error: httpx.RequestError) -> str:
     # The exception class (ConnectTimeout, ConnectError, ...) helps diagnosis;
     # its text can embed URLs, so it is not echoed.

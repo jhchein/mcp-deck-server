@@ -4,9 +4,9 @@ Contracts only — signatures, schemas, auth claims. Not implementation.
 
 ## MCP Tools
 
-All tools are async, registered via `@mcp.tool()` on the `FastMCP("deck")` instance in `server.py`.
-Tools access the shared httpx client and config via the FastMCP lifespan context.
-Tools call `make_nc_request` directly — never other tool functions (tool independence convention).
+All tools are async, registered on the `MCPServer("deck")` instance in `server.py`.
+Tools access the shared httpx client and config via `get_runtime()`, which returns the runtime the server lifespan published (mcp 2.x has no `get_context()`, decision 020).
+Tools call `runtime.request` (a thin wrapper over `make_nc_request`) directly — never other tool functions (tool independence convention).
 Tool docstrings and `Annotated[..., Field(description=...)]` parameter hints are part of the agent-facing MCP schema contract (decision 017).
 
 | Tool                      | Parameters                                                                                                      | Returns            |
@@ -76,9 +76,10 @@ All exceptions live in `client.py`.
 DeckAPIError(Exception)           # Base — all Deck API errors
 ├── DeckHTTPError(DeckAPIError)   # HTTP status errors (has .status_code, .body; message includes Deck's "message" field, decision 018)
 ├── DeckConnectionError(DeckAPIError)  # Network / timeout errors; message names the exception class (decision 019)
-├── DeckResponseError(DeckAPIError)    # 2xx response with a non-JSON body
-└── DeckTimeoutError(DeckAPIError)     # Tool call exceeded MCP_TOOL_TIMEOUT (decision 019)
+└── DeckResponseError(DeckAPIError)    # 2xx response with a non-JSON body
 ```
+
+mcp 2.x sends only `ToolError` messages to the client and masks every other exception as `Error executing tool <name>`. The tool wrapper therefore re-raises `DeckAPIError` and `ValueError` as `ToolError` with the original message, and raises `ToolError` for an exceeded `MCP_TOOL_TIMEOUT` (decisions 019 and 020). Unexpected exceptions stay masked.
 
 ## Config Contract
 

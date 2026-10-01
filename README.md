@@ -241,3 +241,7 @@ The current security and performance positions are documented separately:
 - [docs/performance.md](docs/performance.md)
 
 Short version: the local stdio deployment is acceptable for a trusted local MCP client, and current performance is fast enough for normal single-user MCP use. The broad unscoped assigned-card scan is the path to watch if the account gains access to many boards.
+
+## License
+
+[MIT](LICENSE)

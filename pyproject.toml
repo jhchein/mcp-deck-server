@@ -2,12 +2,14 @@
 name = "mcp-deck-server"
 version = "0.1.0"
 description = "MCP tool server for Nextcloud Deck"
+license = "MIT"
+license-files = ["LICENSE"]
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "cryptography>=46.0.7",
     "httpx>=0.28.1",
-    "mcp>=1.27.0",
+    "mcp>=2.2,<3",
     "pydantic>=2.11",
     "python-dotenv>=1.1.1",
 ]
@@ -56,5 +58,4 @@ markers = [
 ]
 
 [tool.uv]
-# mcp 2.x removes the mcp.server.fastmcp module this server imports.
-constraint-dependencies = ["mcp>=1.28.1,<2"]
+constraint-dependencies = ["mcp>=2.2,<3"]
