@@ -89,7 +89,7 @@ class DeckConfig:
     nc_app_password: str  # Required.
     nc_api_version: str  # Default "v1.1"
     request_timeout: float  # Default 30.0 seconds.
-    max_retries: int        # Default 2; transient GET failures only (decision 018).
+    max_retries: int  # Default 2; transient GET failures only (decision 018).
 ```
 
 Loaded from environment variables: `NC_URL`, `NC_USER`, `NC_APP_PASSWORD`, `NC_API_VERSION`, `MCP_REQUEST_TIMEOUT`, `MCP_MAX_RETRIES`.
