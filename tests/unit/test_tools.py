@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -847,26 +846,19 @@ async def test_assign_label_to_card_with_raw_response_wraps_result(
     assert result == {"success": True, "raw": ["ok"]}
 
 
-@pytest.mark.asyncio
-async def test_get_runtime_invalid_lifespan_context_raises_value_error(
+def test_get_runtime_outside_lifespan_raises_value_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    invalid_context = SimpleNamespace(
-        request_context=SimpleNamespace(lifespan_context={})
-    )
-    monkeypatch.setattr(server.mcp, "get_context", lambda: invalid_context)
+    monkeypatch.setattr(server, "_active_runtime", None)
 
-    with pytest.raises(ValueError, match="Lifespan context is unavailable"):
+    with pytest.raises(ValueError, match="unavailable outside the server lifespan"):
         server.get_runtime()
 
 
 def test_get_runtime_returns_deck_runtime(
     monkeypatch: pytest.MonkeyPatch, runtime: DeckRuntime
 ) -> None:
-    valid_context = SimpleNamespace(
-        request_context=SimpleNamespace(lifespan_context=runtime)
-    )
-    monkeypatch.setattr(server.mcp, "get_context", lambda: valid_context)
+    monkeypatch.setattr(server, "_active_runtime", runtime)
 
     resolved_runtime = server.get_runtime()
 
@@ -888,6 +880,17 @@ async def test_deck_lifespan_creates_and_closes_client(
 
     assert runtime_obj is not None
     assert runtime_obj.client.is_closed
+    assert server._active_runtime is None
+
+
+@pytest.mark.asyncio
+async def test_deck_lifespan_publishes_runtime_to_get_runtime(
+    monkeypatch: pytest.MonkeyPatch, test_config
+) -> None:
+    monkeypatch.setattr(server, "load_config", lambda: test_config)
+
+    async with server.deck_lifespan(server.mcp) as lifespan_runtime:
+        assert server.get_runtime() is lifespan_runtime
 
 
 @pytest.mark.asyncio

@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import json
 import logging
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -163,3 +166,49 @@ async def test_stdio_server_advertises_the_configured_tools(
     env: dict[str, str], expected: set[str]
 ) -> None:
     assert await _advertised_tools(**env) == expected
+
+
+def test_stdio_server_serves_a_2025_era_client() -> None:
+    """A client that speaks the 2025-06-18 handshake still gets the tools."""
+    messages = [
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "legacy-client", "version": "1"},
+            },
+        },
+        {"jsonrpc": "2.0", "method": "notifications/initialized"},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+    ]
+    completed = subprocess.run(
+        [sys.executable, "-m", "mcp_deck_server"],
+        input="".join(json.dumps(message) + "\n" for message in messages),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        cwd=REPO_ROOT,
+        env={
+            **os.environ,
+            "NC_URL": "https://nextcloud.example.test",
+            "NC_USER": "alice",
+            "NC_APP_PASSWORD": "secret",
+            "MCP_READ_ONLY": "false",
+            "MCP_ENABLED_TOOLS": "",
+            "PYTHONPATH": str(REPO_ROOT),
+        },
+    )
+    responses = {
+        reply["id"]: reply
+        for reply in map(json.loads, completed.stdout.splitlines())
+        if "id" in reply
+    }
+
+    assert responses[1]["result"]["protocolVersion"] == "2025-06-18"
+    assert responses[1]["result"]["serverInfo"]["name"] == "deck"
+    tools = responses[2]["result"]["tools"]
+    assert {tool["name"] for tool in tools} == READ_TOOLS | WRITE_TOOLS
+    assert all("outputSchema" not in tool for tool in tools)
