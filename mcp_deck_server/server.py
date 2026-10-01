@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+import logging
+from collections.abc import Callable
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, TypeVar
 
 import httpx
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from .client import DeckHTTPError, make_nc_request
@@ -17,6 +21,29 @@ from .models import AssignedCards, Board, Card, CardResult, Owner, SkippedBoard,
 # cross-board search.
 _SKIPPABLE_BOARD_STATUS_CODES = frozenset({403, 404})
 
+# Deck limits card titles to 255 characters. The description cap is a sanity
+# limit against runaway agent payloads, not a Deck-enforced value.
+MAX_TITLE_LENGTH = 255
+MAX_DESCRIPTION_LENGTH = 100_000
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+logger = logging.getLogger(__name__)
+audit_logger = logging.getLogger(f"{__name__}.audit")
+
+_READ_ONLY = ToolAnnotations(readOnlyHint=True)
+_CREATE = ToolAnnotations(
+    readOnlyHint=False, destructiveHint=False, idempotentHint=False
+)
+_ADDITIVE = ToolAnnotations(
+    readOnlyHint=False, destructiveHint=False, idempotentHint=True
+)
+_DESTRUCTIVE = ToolAnnotations(
+    readOnlyHint=False, destructiveHint=True, idempotentHint=True
+)
+
+_WRITE_TOOL_NAMES: set[str] = set()
+
 
 @dataclass(frozen=True)
 class DeckRuntime:
@@ -25,8 +52,10 @@ class DeckRuntime:
 
 
 @asynccontextmanager
-async def deck_lifespan(_: FastMCP):
+async def deck_lifespan(app: FastMCP):
     config = load_config()
+    if config.read_only:
+        _hide_write_tools(app)
     client = httpx.AsyncClient(
         timeout=config.request_timeout,
         auth=(config.nc_user, config.nc_app_password),
@@ -43,6 +72,37 @@ async def deck_lifespan(_: FastMCP):
 
 
 mcp = FastMCP("deck", lifespan=deck_lifespan)
+
+
+def _write_tool(annotations: ToolAnnotations) -> Callable[[F], F]:
+    """Register a state-changing tool so read-only mode can remove it."""
+
+    def register(function: F) -> F:
+        _WRITE_TOOL_NAMES.add(function.__name__)
+        mcp.tool(annotations=annotations)(function)
+        return function
+
+    return register
+
+
+def _hide_write_tools(app: FastMCP) -> None:
+    for name in sorted(_WRITE_TOOL_NAMES):
+        with suppress(ToolError):
+            app.remove_tool(name)
+    logger.info("Read-only mode: write tools are disabled")
+
+
+def _authorize_write(runtime: DeckRuntime, tool: str, **ids: object) -> None:
+    """Refuse writes in read-only mode and log an audit line for allowed ones.
+
+    The audit line carries the tool name and identifiers only, never card
+    content or credentials.
+    """
+    if runtime.config.read_only:
+        raise ValueError(f"{tool} is disabled because MCP_READ_ONLY is set")
+    audit_logger.info(
+        "write tool=%s %s", tool, " ".join(f"{k}={v}" for k, v in ids.items())
+    )
 
 
 def _resolve_text_field(value: str | None, current: str | None) -> str:
@@ -94,7 +154,7 @@ def _card_matches_done_filter(card: Card, done: bool | None) -> bool:
     return (card.done is not None) is done
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ_ONLY)
 async def list_boards() -> list[Board]:
     """List all boards the authenticated user can access.
 
@@ -106,7 +166,7 @@ async def list_boards() -> list[Board]:
     return [Board.model_validate(board) for board in response]
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ_ONLY)
 async def get_board(board_id: int) -> Board:
     """Get full details for a single board, including labels and ACL data.
 
@@ -122,7 +182,7 @@ async def get_board(board_id: int) -> Board:
     return Board.model_validate(response)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ_ONLY)
 async def list_stacks(board_id: int) -> list[Stack]:
     """List all stacks on a board.
 
@@ -139,7 +199,7 @@ async def list_stacks(board_id: int) -> list[Stack]:
     return [Stack.model_validate(stack) for stack in response]
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ_ONLY)
 async def list_cards(
     board_id: int,
     stack_id: int,
@@ -175,7 +235,7 @@ async def list_cards(
     raise ValueError(f"Stack {stack_id} not found on board {board_id}")
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ_ONLY)
 async def get_assigned_cards(
     user_id: Annotated[
         str | None,
@@ -268,14 +328,17 @@ async def get_assigned_cards(
     return AssignedCards(cards=results, skipped_boards=skipped)
 
 
-@mcp.tool()
+@_write_tool(_CREATE)
 async def create_card(
     board_id: int,
     stack_id: int,
-    title: str,
+    title: Annotated[str, Field(max_length=MAX_TITLE_LENGTH)],
     description: Annotated[
         str,
-        Field(description="Card description. Defaults to empty."),
+        Field(
+            description="Card description. Defaults to empty.",
+            max_length=MAX_DESCRIPTION_LENGTH,
+        ),
     ] = "",
 ) -> Card:
     """Create a new card in a stack.
@@ -283,6 +346,7 @@ async def create_card(
     Returns the created card.
     """
     runtime = get_runtime()
+    _authorize_write(runtime, "create_card", board_id=board_id, stack_id=stack_id)
     payload = {
         "title": title,
         "description": description,
@@ -298,7 +362,7 @@ async def create_card(
     return Card.model_validate(response)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ_ONLY)
 async def get_card(board_id: int, stack_id: int, card_id: int) -> Card:
     """Get full details for a single card.
 
@@ -314,18 +378,24 @@ async def get_card(board_id: int, stack_id: int, card_id: int) -> Card:
     return Card.model_validate(response)
 
 
-@mcp.tool()
+@_write_tool(_DESTRUCTIVE)
 async def update_card(
     board_id: int,
     stack_id: int,
     card_id: int,
     title: Annotated[
         str | None,
-        Field(description="New title. None to keep current."),
+        Field(
+            description="New title. None to keep current.",
+            max_length=MAX_TITLE_LENGTH,
+        ),
     ] = None,
     description: Annotated[
         str | None,
-        Field(description="New description text, '' to clear, None to keep current."),
+        Field(
+            description="New description text, '' to clear, None to keep current.",
+            max_length=MAX_DESCRIPTION_LENGTH,
+        ),
     ] = None,
     duedate: Annotated[
         str | None,
@@ -359,6 +429,9 @@ async def update_card(
     overwritten.
     """
     runtime = get_runtime()
+    _authorize_write(
+        runtime, "update_card", board_id=board_id, stack_id=stack_id, card_id=card_id
+    )
     current_card_data = await make_nc_request(
         runtime.client,
         runtime.config,
@@ -408,7 +481,7 @@ async def update_card(
     return Card.model_validate(response)
 
 
-@mcp.tool()
+@_write_tool(_ADDITIVE)
 async def move_card(
     board_id: int,
     card_id: int,
@@ -436,6 +509,7 @@ async def move_card(
         raise ValueError("Provide target_stack_name or target_stack_id")
 
     runtime = get_runtime()
+    _authorize_write(runtime, "move_card", board_id=board_id, card_id=card_id)
     stacks_data = await make_nc_request(
         runtime.client,
         runtime.config,
@@ -547,13 +621,16 @@ async def move_card(
     return validated_response
 
 
-@mcp.tool()
+@_write_tool(_ADDITIVE)
 async def archive_card(board_id: int, stack_id: int, card_id: int) -> Card:
     """Archive a card.
 
     Archived cards are removed from the active board view.
     """
     runtime = get_runtime()
+    _authorize_write(
+        runtime, "archive_card", board_id=board_id, stack_id=stack_id, card_id=card_id
+    )
     response = await make_nc_request(
         runtime.client,
         runtime.config,
@@ -563,7 +640,7 @@ async def archive_card(board_id: int, stack_id: int, card_id: int) -> Card:
     return Card.model_validate(response)
 
 
-@mcp.tool()
+@_write_tool(_DESTRUCTIVE)
 async def remove_label_from_card(
     board_id: int,
     stack_id: int,
@@ -572,6 +649,14 @@ async def remove_label_from_card(
 ) -> dict[str, Any]:
     """Remove a label from a card."""
     runtime = get_runtime()
+    _authorize_write(
+        runtime,
+        "remove_label_from_card",
+        board_id=board_id,
+        stack_id=stack_id,
+        card_id=card_id,
+        label_id=label_id,
+    )
     payload = {"labelId": label_id}
     result = await make_nc_request(
         runtime.client,
@@ -587,7 +672,7 @@ async def remove_label_from_card(
     return result
 
 
-@mcp.tool()
+@_write_tool(_ADDITIVE)
 async def assign_label_to_card(
     board_id: int,
     stack_id: int,
@@ -602,6 +687,14 @@ async def assign_label_to_card(
     Get available label IDs from get_board first.
     """
     runtime = get_runtime()
+    _authorize_write(
+        runtime,
+        "assign_label_to_card",
+        board_id=board_id,
+        stack_id=stack_id,
+        card_id=card_id,
+        label_id=label_id,
+    )
     payload = {"labelId": label_id}
     result = await make_nc_request(
         runtime.client,
@@ -617,7 +710,7 @@ async def assign_label_to_card(
     return result
 
 
-@mcp.tool()
+@_write_tool(_ADDITIVE)
 async def assign_user_to_card(
     board_id: int,
     stack_id: int,
@@ -629,6 +722,14 @@ async def assign_user_to_card(
 ) -> dict[str, Any]:
     """Assign a user to a card by Nextcloud user ID."""
     runtime = get_runtime()
+    _authorize_write(
+        runtime,
+        "assign_user_to_card",
+        board_id=board_id,
+        stack_id=stack_id,
+        card_id=card_id,
+        user_id=user_id,
+    )
     payload = {"userId": user_id}
     result = await make_nc_request(
         runtime.client,
@@ -644,7 +745,7 @@ async def assign_user_to_card(
     return result
 
 
-@mcp.tool()
+@_write_tool(_DESTRUCTIVE)
 async def unassign_user_from_card(
     board_id: int,
     stack_id: int,
@@ -653,6 +754,14 @@ async def unassign_user_from_card(
 ) -> dict[str, Any]:
     """Remove a user assignment from a card."""
     runtime = get_runtime()
+    _authorize_write(
+        runtime,
+        "unassign_user_from_card",
+        board_id=board_id,
+        stack_id=stack_id,
+        card_id=card_id,
+        user_id=user_id,
+    )
     payload = {"userId": user_id}
     result = await make_nc_request(
         runtime.client,

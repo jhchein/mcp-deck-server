@@ -163,7 +163,7 @@ PR 1 — robustness:
 
 PR 2 — security hardening:
 
-- [ ] `MCP_READ_ONLY` mode, MCP tool annotations, HTTPS rule, API version check, input length caps, audit log
+- [x] `MCP_READ_ONLY` mode, MCP tool annotations, HTTPS rule, API version check, input length caps, audit log
 
 PR 3 — performance and ergonomics:
 

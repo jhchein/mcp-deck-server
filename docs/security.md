@@ -10,8 +10,9 @@ We found no blocking security issue for the current local-only deployment. The m
 | --- | --- | --- | --- |
 | Credential handling | Low | `NC_APP_PASSWORD` is loaded from environment or `.env`, excluded from dataclass `repr`, and not logged by project code. `.env` is ignored by git. | Keep `.env` out of source control. Rotate app passwords after suspected exposure. |
 | Nextcloud app password scope | Medium | Nextcloud documents device-specific passwords as client credentials that can be revoked individually. They are not Deck-only tokens. | Use a dedicated low-privilege Nextcloud user for the MCP server when possible. |
-| Input validation | Low | Tool path parameters are typed as `int` in the MCP schema. Text fields are sent in JSON payloads, not interpolated into URLs. | Keep numeric IDs typed as integers. Add tests if new string path parameters are introduced. |
-| Base URL validation | Low | `NC_URL` is validated as an absolute HTTP(S) URL with a host, and query or fragment components are rejected. | Keep this validation in place for any future config-loading changes. |
+| Input validation | Low | Tool path parameters are typed as `int` in the MCP schema. Text fields are sent in JSON payloads, not interpolated into URLs. Card titles (255 characters) and descriptions (100,000 characters) are length-capped in the tool schema. | Keep numeric IDs typed as integers. Add tests if new string path parameters are introduced. |
+| Base URL validation | Low | `NC_URL` is validated as an absolute URL with a host, and query or fragment components are rejected. Plain `http` is accepted only for loopback hosts unless `NC_ALLOW_INSECURE_HTTP=true`. `NC_API_VERSION` must match `v<major>[.<minor>]` because it is part of the request path. | Keep this validation in place for any future config-loading changes. |
+| Prompt injection and write access | Medium | Card titles and descriptions are untrusted text the agent reads and can then act on with write tools. The app password cannot be scoped to Deck. | Set `MCP_READ_ONLY=true` unless the agent needs to write. Tools carry MCP annotations so clients can confirm risky calls, and write tools log an audit line (tool name and IDs, never content) to stderr. |
 | SSRF | Low | Tool parameters only control path segments under the configured Deck API base URL. Clients cannot choose arbitrary hosts through tool calls. | Keep the remote host config-only. Do not add tools that accept full URLs without a separate review. |
 | Transport boundary | Low | `main.py` hardcodes stdio transport. There is no network listener in the server. | Treat the local MCP host and any connected agent as trusted process-level callers. |
 | Error information exposure | Low | `DeckHTTPError` exposes the status and, when the body is JSON, Deck's `message` field (whitespace-collapsed, truncated to 300 characters). HTML or other bodies are never echoed. `DeckConnectionError` now returns a generic connection-failure message instead of low-level request details. | Keep low-level connection details out of MCP-visible exceptions. |
@@ -42,6 +43,8 @@ We do not need to block current use on these items. They should be handled as no
 | Done | Validate `NC_URL` at config load. | Maintainer | Invalid or surprising base URLs fail before the server starts. |
 | Done | Redact `DeckConnectionError` messages. | Maintainer | MCP clients receive actionable connection failures without full low-level request details. |
 | Done | Document dedicated-user setup guidance. | Maintainer | Users understand that the app password should belong to a least-privilege Nextcloud account where possible. |
+| Done | Add `MCP_READ_ONLY`, tool annotations and write audit logging (decision 018). | Maintainer | Agents that only need to read cannot change boards, and clients can prompt before risky writes. |
+| Done | Require `https` for non-loopback `NC_URL` and validate `NC_API_VERSION` (decision 018). | Maintainer | Credentials are not sent in clear text by accident. |
 
 ## Current position
 

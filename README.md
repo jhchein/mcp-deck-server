@@ -39,11 +39,13 @@ The `.env` file lives in the project root. Keep it out of source control.
 
 | Variable | Required | Default | Notes |
 | --- | --- | --- | --- |
-| `NC_URL` | Yes | None | Absolute `http` or `https` Nextcloud base URL. No query string or fragment. |
+| `NC_URL` | Yes | None | Absolute Nextcloud base URL. No query string or fragment. Must be `https`, except for `localhost`, `127.0.0.1` and `::1`. |
 | `NC_USER` | Yes | None | Nextcloud user ID for the MCP server. |
 | `NC_APP_PASSWORD` | Yes | None | Device-specific app password for `NC_USER`. |
-| `NC_API_VERSION` | No | `v1.1` | Deck API version. |
+| `NC_API_VERSION` | No | `v1.1` | Deck API version, in the form `v1` or `v1.1`. |
 | `MCP_REQUEST_TIMEOUT` | No | `30.0` | HTTP request timeout in seconds. |
+| `MCP_READ_ONLY` | No | `false` | When `true`, write tools are removed from the tool list and refused if called. |
+| `NC_ALLOW_INSECURE_HTTP` | No | `false` | Allows plain `http` for a non-local `NC_URL`. Credentials then travel unencrypted. |
 | `MCP_MAX_RETRIES` | No | `2` | Retries for transient `GET` failures (HTTP 429/502/503/504, connection errors), 0-5. Writes are never retried. |
 
 For live integration and performance checks, add this only when you have a board that can safely receive disposable test cards:
@@ -51,6 +53,12 @@ For live integration and performance checks, add this only when you have a board
 ```env
 DECK_TEST_BOARD_ID=6
 ```
+
+## Read-only mode
+
+Set `MCP_READ_ONLY=true` to give the agent a read-only view. The write tools (`create_card`, `update_card`, `move_card`, `archive_card`, and the label and assignee tools) disappear from the tool list, and each one also refuses to run if a client calls it anyway. Restart the MCP server after changing the setting. This is the strongest control against prompt injection from card text, because a Nextcloud app password cannot be limited to Deck.
+
+Every tool also carries MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`) so clients can ask for confirmation before risky calls. Write tools log one audit line to stderr with the tool name and IDs, never card content.
 
 ## MCP client config
 
