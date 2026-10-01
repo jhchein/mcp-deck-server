@@ -101,3 +101,7 @@ We should keep the current implementation. The existing shared `httpx.AsyncClien
 We should keep live mutation timing behind `DECK_TEST_BOARD_ID`. That rule prevents accidental writes to a real board while still allowing disposable-card performance checks when a test board is configured.
 
 We should not add response caching in this phase. The current live latency is acceptable, and caching would add invalidation behavior that is more likely to create stale agent output than to improve user experience today.
+
+## Tool list size
+
+Decision 019 registers tools without structured output. FastMCP otherwise derives an `outputSchema` for every tool from its return type and sends each result twice (text content and `structuredContent`). We measured the serialised `tools/list` response of the 14 tools: about 68 KB before (56 KB of it output schemas) and about 11 KB after. Clients that forward tool definitions to the model save roughly 14k tokens per session; a live stdio call confirmed that results still arrive as one JSON text block and no `structuredContent`.

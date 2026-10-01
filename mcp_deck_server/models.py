@@ -102,6 +102,8 @@ class SkippedBoard(DeckBaseModel):
 class AssignedCards(DeckBaseModel):
     cards: list[CardResult]
     skipped_boards: list[SkippedBoard]
+    total_matches: int = 0
+    truncated: bool = False
 
 
 class Board(DeckBaseModel):
