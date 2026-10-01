@@ -51,6 +51,7 @@ class Assignment(DeckBaseModel):
     cardId: int | None = None
     type: int | str | None = None
 
+
 class CardResult(DeckBaseModel):
     board_id: int
     board_title: str
@@ -81,10 +82,10 @@ DeckAPIError(Exception)           # Base — all Deck API errors
 ```python
 @dataclasses.dataclass(frozen=True)
 class DeckConfig:
-    nc_url: str           # Required. No trailing slash.
-    nc_user: str          # Required.
+    nc_url: str  # Required. No trailing slash.
+    nc_user: str  # Required.
     nc_app_password: str  # Required.
-    nc_api_version: str   # Default "v1.1"
+    nc_api_version: str  # Default "v1.1"
     request_timeout: float  # Default 30.0 seconds.
 ```
 
