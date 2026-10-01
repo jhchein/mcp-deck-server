@@ -96,6 +96,36 @@ Point your MCP client at `uv run main.py` from this repository. Example shape:
 
 Use the Windows path style in `cwd` when configuring a Windows client.
 
+Without a checkout, uv can run the server straight from GitHub. Put the `NC_*` variables in the client's `env` block in that case:
+
+```json
+{
+  "mcpServers": {
+    "deck": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/jhchein/mcp-deck-server", "mcp-deck-server"],
+      "env": {
+        "NC_URL": "https://your-nextcloud-instance.example.com",
+        "NC_USER": "your-agents-username",
+        "NC_APP_PASSWORD": "your-app-password"
+      }
+    }
+  }
+}
+```
+
+## Logs
+
+The server writes to stderr; stdout carries the MCP protocol. Each tool call logs one line with the tool name, outcome and duration, and each retried `GET` logs a warning. Neither contains arguments, card content or credentials.
+
+```text
+tool=get_assigned_cards outcome=ok duration_ms=412
+deck_retry method=GET path=/index.php/apps/deck/api/v1.1/boards attempt=1 reason=HTTP 503 wait_ms=312
+tool=list_boards outcome=error:DeckHTTPError duration_ms=87
+```
+
+Write tools additionally log an audit line with the tool name and IDs.
+
 ## Tools
 
 The tool names are small on purpose. IDs come from Deck, so start with `list_boards` and `list_stacks` when you are exploring a board for the first time.
@@ -131,12 +161,15 @@ Tools return their result as JSON text and do not advertise an output schema, wh
 
 ## Project layout
 
-The implementation is deliberately flat. `server.py` owns the MCP tools, `client.py` owns HTTP behavior, `models.py` owns response shapes, and `config.py` owns environment parsing.
+The implementation is deliberately flat. `server.py` owns the MCP tools, `client.py` owns HTTP behavior, `models.py` owns response shapes, `config.py` owns environment parsing, and `cli.py` owns the command line (`--check` and the stdio start).
 
 ```text
 main.py
+SECURITY.md
 mcp_deck_server/
     __init__.py
+    __main__.py
+    cli.py
     client.py
     config.py
     models.py
@@ -155,7 +188,7 @@ docs/
 Dependency direction stays simple:
 
 ```text
-config.py <- client.py <- server.py <- main.py
+config.py <- client.py <- server.py <- cli.py <- main.py
 models.py <- server.py
 ```
 
@@ -174,7 +207,7 @@ uv run ruff check .
 uv run ruff format --check .
 uv run pyright
 uv run pytest tests/unit tests/test_timing.py -m "not integration"
-uv audit
+uv audit --locked
 ```
 
 Live tests need a configured `.env`. The mutation performance test also needs `DECK_TEST_BOARD_ID`, because it creates, moves, and archives a disposable card.
@@ -186,7 +219,11 @@ uv run pytest tests/integration/test_live_performance.py -s -m "integration and 
 
 ## CI and branch protection
 
-CI runs lint, unit tests with coverage, audit, and optional live jobs. `integration` and `benchmarks` are intentionally not required on PRs because they need secrets or a live Nextcloud instance.
+CI runs lint, unit tests with coverage, audit, and optional live jobs. It runs for pull requests against any branch, so stacked PRs get checks. Actions are pinned to commit SHAs and Dependabot keeps them current in one weekly PR. `integration` and `benchmarks` are intentionally not required on PRs because they need secrets or a live Nextcloud instance.
+
+The `audit` check has a path-aware gate. When a new advisory appears, it fails on pushes to `main`, on the weekly scheduled run, and on pull requests that change `pyproject.toml` or `uv.lock`. On any other pull request it reports a warning instead, so an unrelated advisory does not block a fix. Relock in a separate PR when the warning shows up.
+
+The weekly run also executes the live integration tests if the repository has the secrets `NC_URL`, `NC_USER`, `NC_APP_PASSWORD` and `DECK_TEST_BOARD_ID`. Use a dedicated test user and a board that can receive disposable cards.
 
 Required checks for `main` should be:
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
@@ -107,27 +108,43 @@ async def deck_lifespan(app: FastMCP):
 mcp = FastMCP("deck", lifespan=deck_lifespan)
 
 
-def _with_deadline(function: Callable[..., Awaitable[Any]]) -> Any:
-    """Bound a tool call by MCP_TOOL_TIMEOUT, retries and board fan-out included.
+def _instrument(function: Callable[..., Awaitable[Any]]) -> Any:
+    """Bound a tool call by MCP_TOOL_TIMEOUT and log how it went.
 
     The per-request timeout alone allows a multi-board search to run for
-    minutes when Deck is slow; the agent would rather get a clear error.
+    minutes when Deck is slow; the agent would rather get a clear error. The
+    log line carries the tool name, outcome and duration only, never arguments
+    or results.
     """
 
     @functools.wraps(function)
     async def run(*args: Any, **kwargs: Any) -> Any:
         timeout = get_runtime().config.tool_timeout
         deadline = asyncio.timeout(timeout)
+        started = time.perf_counter()
+        outcome = "ok"
         try:
             async with deadline:
                 return await function(*args, **kwargs)
         except TimeoutError as error:
             if not deadline.expired():
+                outcome = "error:TimeoutError"
                 raise
+            outcome = "timeout"
             raise DeckTimeoutError(
                 f"{function.__name__} exceeded the {timeout:g} s tool deadline "
                 "(MCP_TOOL_TIMEOUT)"
             ) from error
+        except BaseException as error:
+            outcome = f"error:{type(error).__name__}"
+            raise
+        finally:
+            logger.info(
+                "tool=%s outcome=%s duration_ms=%.0f",
+                function.__name__,
+                outcome,
+                (time.perf_counter() - started) * 1000,
+            )
 
     return run
 
@@ -140,7 +157,7 @@ def _register_tool[F: Callable[..., Any]](
         _WRITE_TOOL_NAMES.add(function.__name__)
     # Without structured output FastMCP omits the outputSchema and the duplicate
     # structuredContent; clients still receive the JSON text content.
-    mcp.tool(annotations=annotations, structured_output=False)(_with_deadline(function))
+    mcp.tool(annotations=annotations, structured_output=False)(_instrument(function))
     return function
 
 

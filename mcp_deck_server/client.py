@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import random
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -15,6 +17,8 @@ RETRYABLE_STATUS_CODES = frozenset({429, 502, 503, 504})
 RETRY_BASE_DELAY_SECONDS = 0.5
 RETRY_MAX_DELAY_SECONDS = 5.0
 MAX_ERROR_DETAIL_CHARS = 300
+
+logger = logging.getLogger(__name__)
 AUTH_FAILURE_HINT = "check NC_USER and NC_APP_PASSWORD"
 
 
@@ -105,6 +109,25 @@ def _retry_delay(attempt: int, response: httpx.Response | None) -> float:
     return backoff * random.uniform(0.5, 1.0)
 
 
+async def _wait_before_retry(
+    method: str,
+    url: str,
+    attempt: int,
+    response: httpx.Response | None,
+    reason: str,
+) -> None:
+    delay = _retry_delay(attempt, response)
+    logger.warning(
+        "deck_retry method=%s path=%s attempt=%d reason=%s wait_ms=%.0f",
+        method,
+        urlsplit(url).path,
+        attempt + 1,
+        reason,
+        delay * 1000,
+    )
+    await asyncio.sleep(delay)
+
+
 async def _send_with_retries(
     client: httpx.AsyncClient,
     config: DeckConfig,
@@ -122,13 +145,15 @@ async def _send_with_retries(
         except httpx.TransportError as error:
             if is_last_attempt:
                 raise DeckConnectionError(_connection_message(error)) from error
-            await asyncio.sleep(_retry_delay(attempt, None))
+            await _wait_before_retry(method, url, attempt, None, type(error).__name__)
             continue
         except httpx.RequestError as error:
             raise DeckConnectionError(_connection_message(error)) from error
 
         if response.status_code in RETRYABLE_STATUS_CODES and not is_last_attempt:
-            await asyncio.sleep(_retry_delay(attempt, response))
+            await _wait_before_retry(
+                method, url, attempt, response, f"HTTP {response.status_code}"
+            )
             continue
         return response
 

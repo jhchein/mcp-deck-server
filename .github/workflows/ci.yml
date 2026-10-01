@@ -4,26 +4,35 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+  schedule:
+    # Weekly: catches new advisories and runs the live integration tests.
+    - cron: "17 5 * * 1"
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.13"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --locked --dev
 
       - name: Ruff check
         run: uv run ruff check .
@@ -39,18 +48,18 @@ jobs:
     needs: lint
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.13"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --locked --dev
 
       - name: Unit tests with coverage
         run: >-
@@ -60,8 +69,11 @@ jobs:
           --cov-report=xml:coverage.xml
           --cov-fail-under=80
 
+      - name: Entry point smoke test
+        run: uv run mcp-deck-server --help
+
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: coverage-xml
           path: coverage.xml
@@ -74,31 +86,27 @@ jobs:
       NC_URL: ${{ secrets.NC_URL }}
       NC_USER: ${{ secrets.NC_USER }}
       NC_APP_PASSWORD: ${{ secrets.NC_APP_PASSWORD }}
+      DECK_TEST_BOARD_ID: ${{ secrets.DECK_TEST_BOARD_ID }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.13"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --locked --dev
 
       - name: Run integration tests when configured
         shell: bash
         run: |
-          if [ ! -d tests/integration ]; then
-            echo "No integration test directory found; skipping."
-            exit 0
-          fi
-
           if [ -z "${NC_URL}" ] || [ -z "${NC_USER}" ] || [ -z "${NC_APP_PASSWORD}" ]; then
-            echo "Integration secrets are not configured; skipping."
+            echo "::warning::Integration secrets are not configured; skipping."
             exit 0
           fi
 
@@ -111,57 +119,59 @@ jobs:
     continue-on-error: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.13"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --locked --dev
 
-      - name: Run timing tests when present
-        shell: bash
-        run: |
-          if [ ! -f tests/test_timing.py ]; then
-            echo "No timing test file found; skipping."
-            exit 0
-          fi
-
-          uv run pytest tests/test_timing.py -s -m slow
+      - name: Run timing tests
+        run: uv run pytest tests/test_timing.py -s -m slow
 
   audit:
+    # Required check. A new advisory must not block pull requests that leave the
+    # dependencies alone, but it must block anything that ships or changes them.
     runs-on: ubuntu-latest
     needs: test
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.13"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --locked --dev
 
       - name: Dependency audit
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          # GHSA-5239-wwwm-4pmq: pygments ReDoS (low 1.9/10, no patch, transitive dev dep)
-          output=$(uv audit 2>&1) || true
-          echo "$output"
-          # Filter the known unpatched advisory, fail if other vulnerabilities remain
-          filtered=$(echo "$output" | grep -c "known vulnerability" || true)
-          ignored=$(echo "$output" | grep -c "GHSA-5239-wwwm-4pmq" || true)
-          if [ "$filtered" -gt 0 ] && [ "$ignored" -eq 0 ]; then
-            echo "::error::Unknown vulnerabilities found"
-            exit 1
+          if uv audit --locked; then
+            exit 0
           fi
+
+          if [ "$EVENT_NAME" = "pull_request" ] \
+            && git diff --quiet "$BASE_SHA" HEAD -- pyproject.toml uv.lock; then
+            echo "::warning::Known vulnerabilities found, but this pull request does not change dependencies. Relock separately."
+            exit 0
+          fi
+
+          echo "::error::Known vulnerabilities found"
+          exit 1
